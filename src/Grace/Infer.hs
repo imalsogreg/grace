@@ -121,6 +121,15 @@ scopedUnsolvedType location k = do
 
         k Type.UnsolvedType{..}
 
+scopedUnsolvedTensorShape :: MonadState Status m => (Monotype.TensorShape -> m a) -> m a
+scopedUnsolvedTensorShape k = do
+    a <- fresh
+
+    scoped (Context.MarkerTensorShape a) do
+        push (Context.UnsolvedTensorShape a)
+
+        k (Monotype.TensorShape [] (Monotype.UnsolvedTensorShape a))
+
 scopedUnsolvedFields :: MonadState Status m => (Type.Record s -> m a) -> m a
 scopedUnsolvedFields k = do
     a <- fresh
@@ -780,6 +789,9 @@ instantiateTypeL a _A0 = do
         Type.Exists{ domain = Domain.Alternatives, .. } -> do
             scopedUnsolvedAlternatives \b -> do
                 instantiateTypeR (Type.substituteAlternatives name 0 b type_) a
+        Type.Exists{ domain = Domain.TensorShape, .. } -> do
+            scopedUnsolvedTensorShape \b -> do
+                instantiateTypeR (Type.substituteTensorShape name 0 b type_) a
 
         -- InstLArr
         Type.Function{..} -> do
@@ -955,6 +967,9 @@ instantiateTypeR _A0 a = do
         Type.Forall{ domain = Domain.Alternatives, .. } -> do
             scopedUnsolvedAlternatives \b -> do
                 instantiateTypeR (Type.substituteAlternatives name 0 b type_) a
+        Type.Forall{ domain = Domain.TensorShape, .. } -> do
+            scopedUnsolvedTensorShape \b -> do
+                instantiateTypeR (Type.substituteTensorShape name 0 b type_) a
 
         Type.Optional{..} -> do
             let _ΓL = _Γ

@@ -99,6 +99,7 @@ parseToken =
             , Type         <$ symbol "Type"
             , Fields       <$ symbol "Fields"
             , Alternatives <$ symbol "Alternatives"
+            , TensorShape  <$ symbol "TensorShape"
             ] <?> "keyword"
 
         , Combinators.choice
@@ -137,6 +138,7 @@ parseToken =
             , Natural  <$ symbol "Natural"
             , Bool     <$ symbol "Bool"
             , Text     <$ symbol "Text"
+            , Tensor   <$ symbol "Tensor"
             ] <?> "built-in type"
 
         , OpenAngle        <$ symbol "<"
@@ -475,6 +477,8 @@ data Token
     | Optional
     | Or
     | Plus
+    | Tensor
+    | TensorShape
     | Text
     | TextEqual
     | TextLiteral Text

@@ -28,6 +28,7 @@ module Grace.Type
     , fieldsFreeIn
     , alternativesFreeIn
     , substituteType
+    , substituteTensorShape
     , substituteFields
     , substituteAlternatives
       -- * Pretty-printing
@@ -167,6 +168,8 @@ instance Plated (Type s) where
 -- | A potentially polymorphic record type
 data Record s = Fields [(Text, Type s)] RemainingFields
     deriving stock (Eq, Functor, Generic, Lift, Show)
+
+-- data TensorShape = TensorShape [Int] Monotype.RemainingTensorShape
 
 instance Pretty (Record s) where
     pretty = prettyRecordType
@@ -309,6 +312,49 @@ substituteType a n _A type_ =
 
         Union{ alternatives = Alternatives kAs ρ, .. } ->
             Union{ alternatives = Alternatives (map (second (substituteType a n _A)) kAs) ρ, .. }
+
+        Scalar{..} ->
+            Scalar{..}
+
+substituteTensorShape :: Text -> Int -> Monotype.TensorShape -> Type s -> Type s
+substituteTensorShape a n _TensorShape type_ =
+    case type_ of
+        VariableType{..} -> VariableType {..}
+        UnsolvedType{..} -> UnsolvedType{..}
+        Exists { type_ = oldType, .. } -> Exists { type_ = newType, .. }
+          where
+            newType = substituteTensorShape a n' _TensorShape oldType
+
+            n'  | a == name && domain == Domain.Type = n + 1
+                | otherwise                          = n
+
+        Forall{ type_ = oldType, .. } -> Forall{ type_ = newType, .. }
+          where
+            newType = substituteTensorShape a n' _TensorShape oldType
+
+            n'  | a == name && domain == Domain.Type = n + 1
+                | otherwise                          = n
+
+        Function{ input = oldInput, output = oldOutput, .. } ->
+            Function{ input = newInput, output = newOutput, .. }
+          where
+            newInput = substituteTensorShape a n _TensorShape oldInput
+
+            newOutput = substituteTensorShape a n _TensorShape oldOutput
+
+        Optional{ type_ = oldType, .. } -> Optional{ type_ = newType, .. }
+          where
+            newType = substituteTensorShape a n _TensorShape oldType
+
+        List{ type_ = oldType, .. } -> List{ type_ = newType, .. }
+          where
+            newType = substituteTensorShape a n _TensorShape oldType
+
+        Record{ fields = Fields kAs ρ, .. } ->
+            Record{ fields = Fields (map (second (substituteTensorShape a n _TensorShape)) kAs) ρ, .. }
+
+        Union{ alternatives = Alternatives kAs ρ, .. } ->
+            Union{ alternatives = Alternatives (map (second (substituteTensorShape a n _TensorShape)) kAs) ρ, .. }
 
         Scalar{..} ->
             Scalar{..}

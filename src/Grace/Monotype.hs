@@ -11,8 +11,10 @@ module Grace.Monotype
     ( -- * Types
       Monotype(..)
     , Scalar(..)
+    , TensorShape(..)
     , Record(..)
     , RemainingFields(..)
+    , RemainingTensorShape(..)
     , Union(..)
     , RemainingAlternatives(..)
     ) where
@@ -89,6 +91,10 @@ instance Pretty Scalar where
 data Record = Fields [(Text, Monotype)] RemainingFields
     deriving stock (Eq, Generic, Show)
 
+-- | A monomorphic TensorShape
+data TensorShape = TensorShape [Int] RemainingTensorShape
+    deriving stock (Eq, Generic, Lift, Show)
+
 -- | This represents whether or not the record type is open or closed
 data RemainingFields
     = EmptyFields
@@ -101,6 +107,11 @@ data RemainingFields
     -- ^ Same as `UnsolvedFields`, except that the user has given the fields
     --   variable an explicit name in the source code
     deriving stock (Eq, Generic, Lift, Show)
+
+data RemainingTensorShape
+  = UnsolvedTensorShape (Existential TensorShape)
+  | VariableTensorShape Text
+  deriving stock (Eq, Generic, Lift, Show)
 
 -- | A monomorphic union type
 data Union = Alternatives [(Text, Monotype)] RemainingAlternatives

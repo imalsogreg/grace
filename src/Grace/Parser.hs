@@ -211,6 +211,8 @@ render t = case t of
     Lexer.Then             -> "then"
     Lexer.Type             -> "Type"
     Lexer.Times            -> "*"
+    Lexer.Tensor           -> "Tensor"
+    Lexer.TensorShape      -> "TensorShape"
     Lexer.True_            -> "True"
     Lexer.URI _            -> "a URI"
 
@@ -506,6 +508,8 @@ grammar = mdo
                 return Domain.Fields
         <|> do  token Lexer.Alternatives
                 return Domain.Alternatives
+        <|> do  token Lexer.TensorShape
+                return Domain.TensorShape
         )
 
     quantifiedType <- rule do

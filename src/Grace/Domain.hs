@@ -23,9 +23,12 @@ data Domain
     -- ^ @forall (a : Fields) . …@
     | Alternatives
     -- ^ @forall (a : Alternatives) . …@
+    | TensorShape
+    -- ^ forall (a : Size) . …@
     deriving stock (Eq, Generic, Lift, Show)
 
 instance Pretty Domain where
     pretty Type         = builtin "Type"
     pretty Fields       = builtin "Fields"
     pretty Alternatives = builtin "Alternatives"
+    pretty TensorShape  = builtin "TensorShape"

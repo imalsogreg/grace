@@ -65,6 +65,8 @@ data Entry s
     --
     -- >>> pretty @(Entry ()) (UnsolvedType 0)
     -- a?
+    | UnsolvedTensorShape (Existential Monotype.TensorShape)
+    -- TODO Docs and pretty.
     | UnsolvedFields (Existential Monotype.Record)
     -- ^ A placeholder fields variable whose type has not yet been inferred
     --
@@ -101,6 +103,8 @@ data Entry s
     --
     -- >>> pretty @(Entry ()) (MarkerType 0)
     -- ➤ a: Type
+    | MarkerTensorShape (Existential Monotype.TensorShape)
+    -- TODO the details.
     | MarkerFields (Existential Monotype.Record)
     -- ^ This is used by the bidirectional type-checking algorithm to separate
     --   context entries introduced before and after type-checking universally
@@ -153,6 +157,8 @@ prettyEntry :: Entry s -> Doc AnsiStyle
 prettyEntry (Variable domain a) =
     label (pretty a) <> operator ":" <> " " <> pretty domain
 prettyEntry (UnsolvedType a) =
+    pretty a <> "?"
+prettyEntry (UnsolvedTensorShape a) =
     pretty a <> "?"
 prettyEntry (UnsolvedFields p) =
     pretty p <> "?"
@@ -224,6 +230,8 @@ prettyEntry (Annotation x a) = Pretty.group (Pretty.flatAlt long short)
     short = pretty x <> operator ":" <> " " <> pretty a
 prettyEntry (MarkerType a) =
     "➤ " <> pretty a <> ": Type"
+prettyEntry (MarkerTensorShape a) =
+    "➤ " <> pretty a <> ": TensorShape"
 prettyEntry (MarkerFields a) =
     "➤ " <> pretty a <> ": Fields"
 prettyEntry (MarkerAlternatives a) =
