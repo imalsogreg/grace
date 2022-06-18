@@ -131,6 +131,7 @@ parseToken =
         , Combinators.choice
             [ List     <$ symbol "List"
             , Optional <$ symbol "Optional"
+            , Tensor   <$ symbol "Tensor"
             , Real     <$ symbol "Real"
             , Integer  <$ symbol "Integer"
             , JSON     <$ symbol "JSON"
@@ -333,6 +334,7 @@ reserved =
         , "Natural"
         , "Natural/fold"
         , "Optional"
+        , "Tensor"
         , "Text"
         , "Text/equal"
         , "Type"
@@ -475,6 +477,7 @@ data Token
     | Optional
     | Or
     | Plus
+    | Tensor
     | Text
     | TextEqual
     | TextLiteral Text

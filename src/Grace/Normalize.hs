@@ -248,6 +248,9 @@ evaluate env syntax =
         Syntax.Embed{ embedded = (_, value) } ->
             value
 
+        Syntax.Tensor{..} ->
+            Value.Tensor (fmap (evaluate env) elements)
+
 {-| This is the function that implements function application, including
     evaluating anonymous functions and evaluating all built-in functions.
 -}
@@ -500,5 +503,8 @@ quote names value =
 
         Value.Builtin builtin ->
             Syntax.Builtin{..}
+
+        Value.Tensor elements ->
+            Syntax.Tensor { elements = fmap  (quote names) elements, .. }
   where
     location = ()

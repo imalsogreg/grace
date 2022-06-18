@@ -205,6 +205,7 @@ render t = case t of
     Lexer.Optional         -> "List"
     Lexer.Or               -> "||"
     Lexer.Plus             -> "+"
+    Lexer.Tensor           -> "Tensor"
     Lexer.Text             -> "Text"
     Lexer.TextEqual        -> "Text/equal"
     Lexer.TextLiteral _    -> "a text literal"
@@ -555,6 +556,16 @@ grammar = mdo
                 type_ <- primitiveType
 
                 return Type.Optional{..}
+
+        <|> ( (\location shapeElements type_ -> Type.Tensor { shape = Type.Shape { tensorShape = Monotype.TensorShape shapeElements, .. }, .. })
+              <$> locatedToken Lexer.Tensor
+              <*> (do token Lexer.OpenBracket
+                      r <- int `sepBy` token Lexer.Comma
+                      token Lexer.CloseBracket
+                      return r
+                  )
+              <*> primitiveType
+            )
 
         <|> do  primitiveType
         )

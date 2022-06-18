@@ -1378,6 +1378,27 @@ infer e0 = do
 
                     return Type.List{..}
 
+        Syntax.Tensor{..} -> do
+            existentialShape <- fresh
+            case Seq.viewl elements of
+                EmptyL -> do
+                    existential <- fresh
+
+                    push (Context.UnsolvedType existential)
+
+                    return Type.Tensor{ type_ = Type.UnsolvedType{..}, shape = Type.UnsolvedType{ existential = existentialShape, .. }, ..} 
+                y :< ys -> do
+                    type_ <- infer y
+
+                    let process element = do
+                            _Γ <- get
+
+                            check element (Context.solveType _Γ type_)
+
+                    traverse_ process ys
+
+                    return Type.Tensor{ shape = Type.UnsolvedType{ existential = existentialShape, .. }, ..}
+
         Syntax.Record{..} -> do
             let process (field, value) = do
                     type_ <- infer value

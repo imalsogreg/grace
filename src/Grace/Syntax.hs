@@ -113,6 +113,7 @@ data Syntax s a
     --   x + y
     | Builtin { location :: s, builtin :: Builtin }
     | Embed { location :: s, embedded :: a }
+    | Tensor { location :: s, elements :: Seq (Syntax s a) } -- TODO Should this be an Array, not Seq?
     deriving stock (Eq, Foldable, Functor, Generic, Lift, Show, Traversable)
 
 instance Plated (Syntax s a) where
@@ -170,6 +171,9 @@ instance Plated (Syntax s a) where
                 pure Builtin{..}
             Embed{..} -> do
                 pure Embed{..}
+            Tensor{ elements = oldElements, .. } -> do
+                newElements <- traverse onSyntax oldElements
+                return Tensor{ elements = newElements, .. }
 
 instance Bifunctor Syntax where
     first f Variable{..} =
@@ -204,6 +208,8 @@ instance Bifunctor Syntax where
         Builtin{ location = f location, .. }
     first f Embed{..} =
         Embed{ location = f location, .. }
+    first f Tensor{..} =
+        Tensor{ location = f location, elements = fmap (first f) elements, .. }
 
     second = fmap
 

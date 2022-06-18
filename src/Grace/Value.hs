@@ -96,6 +96,7 @@ data Value
     | Builtin Builtin
     | Scalar Scalar
     | Operator Value Operator Value
+    | Tensor (Seq Value)
     deriving stock (Eq, Show)
 
 instance IsString Value where
