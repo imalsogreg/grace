@@ -118,6 +118,8 @@ data Type s
     -- >>> pretty @(Type ()) (Union () (Alternatives [("X", "X"), ("Y", "Y")] (Monotype.UnsolvedAlternatives 0)))
     -- < X: X | Y: Y | a? >
     | Scalar { location :: s, scalar :: Scalar }
+    | Shape { location :: s, tensorShape :: Monotype.TensorShape }
+    | Tensor { location :: s, shape :: Type s, type_ :: Type s }
     deriving stock (Eq, Functor, Generic, Lift, Show)
 
 instance IsString (Type ()) where
@@ -149,6 +151,10 @@ instance Plated (Type s) where
             List{ type_ = oldType, .. } -> do
                 newType <- onType oldType
                 return List{ type_ = newType, .. }
+            Tensor { type_ = oldType, shape = oldShape, .. } -> do
+              newType <- onType oldType
+              newShape <- onType oldShape
+              return Tensor { type_ = newType, shape = newShape, .. }
             Record{ fields = Fields oldFieldTypes remainingFields, .. } -> do
                 let onPair (field, oldType) = do
                         newType <- onType oldType
@@ -163,6 +169,8 @@ instance Plated (Type s) where
                 return Union{ alternatives = Alternatives newAlternativeTypes remainingAlternatives, .. }
             Scalar{..} -> do
                 pure Scalar{..}
+            Shape{..} -> do
+                pure Shape{..}
 
 -- | A potentially polymorphic record type
 data Record s = Fields [(Text, Type s)] RemainingFields
@@ -201,6 +209,10 @@ fromMonotype monotype =
             Union{ alternatives = Alternatives (map (second fromMonotype) kτs) ρ, .. }
         Monotype.Scalar scalar ->
             Scalar{..}
+        Monotype.Shape tensorShape ->
+            Shape {.. }
+        Monotype.Tensor shape type_ ->
+            Tensor{ type_ = fromMonotype type_, shape = fromMonotype shape, .. }
   where
     location = ()
 
@@ -313,6 +325,15 @@ substituteType a n _A type_ =
         Scalar{..} ->
             Scalar{..}
 
+        Shape{..} ->
+            Shape{..}
+
+        Tensor{ type_ = oldType, shape = oldShape, ..} -> Tensor { type_ = newType, shape = newShape, .. }
+          where
+            newType = substituteType a n _A oldType
+            newShape = substituteType a n _A oldShape
+
+
 {-| Replace all occurrences of a variable within one `Type` with another `Type`,
     given the variable's label and index
 -}
@@ -368,6 +389,15 @@ substituteFields ρ0 n r@(Fields kτs ρ1) type_ =
         Scalar{..} ->
             Scalar{..}
 
+        Shape{..} ->
+            Shape{..}
+
+        Tensor { type_ = oldType, shape = oldShape, .. } ->
+            Tensor { type_ = newType, shape = newShape, .. }
+          where
+            newType = substituteFields ρ0 n r oldType
+            newShape = substituteFields ρ0 n r oldShape
+
 {-| Replace all occurrences of a variable within one `Type` with another `Type`,
     given the variable's label and index
 -}
@@ -422,6 +452,15 @@ substituteAlternatives ρ0 n r@(Alternatives kτs ρ1) type_ =
 
         Scalar{..} ->
             Scalar{..}
+
+        Shape{..} ->
+            Shape{..}
+
+        Tensor { type_ = oldType, shape = oldShape, .. } ->
+            Tensor { type_ = newType, shape = newShape, .. }
+          where
+            newType = substituteAlternatives ρ0 n r oldType
+            newShape = substituteAlternatives ρ0 n r oldShape
 
 {-| Count how many times the given `Existential` `Type` variable appears within
     a `Type`

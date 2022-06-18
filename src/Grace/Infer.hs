@@ -228,6 +228,15 @@ wellFormedType _Γ type0 =
         Type.Scalar{} -> do
             return ()
 
+        Type.Shape{} -> do
+            return ()
+
+        _A@Type.Tensor{..} -> case shape of
+            Type.Shape {} -> do
+                wellFormedType _Γ type_
+                wellFormedType _Γ shape
+            _ -> throwError (InvalidTensorShape location _A _Γ)
+
 {-| This corresponds to the judgment:
 
     > Γ ⊢ A <: B ⊣ Δ
@@ -769,6 +778,8 @@ instantiateTypeL a _A0 = do
             instLSolve (Monotype.VariableType name)
         Type.Scalar{..} -> do
             instLSolve (Monotype.Scalar scalar)
+        Type.Shape{..} -> do
+            instLSolve (Monotype.Shape tensorShape)
 
         -- InstLExt
         Type.Exists{ domain = Domain.Type, .. } -> do
@@ -860,6 +871,18 @@ instantiateTypeL a _A0 = do
 
             instantiateTypeL a1 type_
 
+        Type.Tensor{..} -> do
+            let _ΓL = _Γ
+            let _ΓR = _Γ'
+
+            a1 <- fresh
+            a2 <- fresh
+
+            set (_ΓR <> (Context.SolvedType a (Monotype.Tensor (Monotype.UnsolvedType a1) (Monotype.UnsolvedType a2)) : Context.UnsolvedType a1 : Context.UnsolvedType a2 : _ΓL))
+
+            instantiateTypeL a1 shape
+            instantiateTypeL a1 type_
+
         -- This is still the same one-layer-at-a-time principle, with a small
         -- twist.  In order to solve:
         --
@@ -923,6 +946,8 @@ instantiateTypeR _A0 a = do
             instRSolve (Monotype.VariableType name)
         Type.Scalar{..} -> do
             instRSolve (Monotype.Scalar scalar)
+        Type.Shape{..} -> do
+            instRSolve (Monotype.Shape tensorShape)
 
         -- InstRArr
         Type.Function{..} -> do
@@ -976,6 +1001,18 @@ instantiateTypeR _A0 a = do
 
             instantiateTypeR type_ a1
 
+        Type.Tensor{..} -> do
+            let _ΓL = _Γ
+            let _ΓR = _Γ'
+
+            a1 <- fresh
+            a2 <- fresh
+
+            set (_ΓR <> (Context.SolvedType a (Monotype.Tensor (Monotype.UnsolvedType a1) (Monotype.UnsolvedType a2)) : Context.UnsolvedType a1 : Context.UnsolvedType a2 : _ΓL))
+
+            instantiateTypeR shape a1
+            instantiateTypeR type_ a1
+            
         Type.Record{..}  -> do
             let _ΓL = _Γ
             let _ΓR = _Γ'
@@ -2092,6 +2129,8 @@ data TypeInferenceError
     --
     | RecordTypeMismatch (Type Location) (Type Location) (Map.Map Text (Type Location)) (Map.Map Text (Type Location))
     | UnionTypeMismatch (Type Location) (Type Location) (Map.Map Text (Type Location)) (Map.Map Text (Type Location))
+    --
+    | InvalidTensorShape Location (Type Location) (Context Location)
     deriving (Eq, Show)
 
 instance Exception TypeInferenceError where
@@ -2487,6 +2526,18 @@ instance Exception TypeInferenceError where
         \… while the latter union has the following extra alternatives:\n\
         \\n\
         \" <> listToText (Map.keys extraB)
+    displayException (InvalidTensorShape location _A _Γ) =
+        "Internal error: Invalid context\n\
+        \\n\
+        \The following type:\n\
+        \\n\
+        \" <> insert _A <> "\n\
+        \\n\
+        \… is not well-formed within the following context:\n\
+        \\n\
+        \" <> listToText _Γ <> "\n\
+        \\n\
+        \" <> Text.unpack (Location.renderError "" location)
 
 -- Helper functions for displaying errors
 

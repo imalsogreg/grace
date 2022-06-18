@@ -15,6 +15,7 @@ module Grace.Monotype
     , RemainingFields(..)
     , Union(..)
     , RemainingAlternatives(..)
+    , TensorShape(..)
     ) where
 
 import Data.String (IsString(..))
@@ -38,6 +39,8 @@ data Monotype
     | Record Record
     | Union Union
     | Scalar Scalar
+    | Shape TensorShape
+    | Tensor Monotype Monotype
     deriving stock (Eq, Generic, Show)
 
 instance IsString Monotype where
@@ -118,3 +121,6 @@ data RemainingAlternatives
     -- ^ Same as `UnsolvedAlternatives`, except that the user has given the
     --   alternatives variable an explicit name in the source code
     deriving stock (Eq, Generic, Lift, Show)
+
+newtype TensorShape = TensorShape [Int]
+  deriving stock (Eq, Generic, Lift, Show)
