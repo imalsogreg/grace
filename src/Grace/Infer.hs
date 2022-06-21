@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TypeApplications  #-}
 
 {-| This module is based on the bidirectional type-checking algorithm from:
@@ -33,16 +34,17 @@ import Control.Exception.Safe (Exception(..))
 import Control.Monad (when)
 import Control.Monad.Except (MonadError(..))
 import Control.Monad.State.Strict (MonadState)
-import Data.Foldable (traverse_)
+import Data.Foldable (traverse_, toList)
 import Data.Sequence (ViewL(..))
 import Data.Text (Text)
 import Data.Void (Void)
+import Debug.Trace (trace, traceShow, traceShowId)
 import Grace.Context (Context, Entry)
 import Grace.Existential (Existential)
 import Grace.Location (Location(..))
 import Grace.Monotype (Monotype)
 import Grace.Pretty (Pretty(..))
-import Grace.Syntax (Syntax)
+import Grace.Syntax (Syntax, elements)
 import Grace.Type (Type(..))
 import Grace.Value (Value)
 
@@ -150,7 +152,7 @@ wellFormedType
     :: MonadError TypeInferenceError m
     => Context Location -> Type Location -> m ()
 wellFormedType _Γ type0 =
-    case type0 of
+    trace "wellFormedType" $ case type0 of
         -- UvarWF
         Type.VariableType{..}
             | Context.Variable Domain.Type name `elem` _Γ -> do
@@ -247,7 +249,7 @@ wellFormedType _Γ type0 =
 subtype
     :: (MonadState Status m, MonadError TypeInferenceError m)
     => Type Location -> Type Location -> m ()
-subtype _A0 _B0 = do
+subtype _A0 _B0 = trace "subtype" do
     _Γ <- get
 
     case (_A0, _B0) of
@@ -362,11 +364,18 @@ subtype _A0 _B0 = do
             | s0 == s1 -> do
                 return ()
 
+        (Type.Shape { tensorShape = shapeA }, Type.Shape {tensorShape = shapeB}) ->
+          if shapeA == shapeB then return () else error "NOPE"
+
         (Type.Optional{ type_ = _A }, Type.Optional{ type_ = _B }) -> do
             subtype _A _B
 
         (Type.List{ type_ = _A }, Type.List{ type_ = _B }) -> do
             subtype _A _B
+
+        (Type.Tensor{ type_ = _A, shape = shapeA }, Type.Tensor {type_ = _B, shape = shapeB}) -> do
+          subtype _A _B
+          subtype shapeA shapeB
 
         -- This is where you need to add any non-trivial subtypes.  For example,
         -- the following three rules specify that `Natural` is a subtype of
@@ -754,7 +763,7 @@ subtype _A0 _B0 = do
 instantiateTypeL
     :: (MonadState Status m, MonadError TypeInferenceError m)
     => Existential Monotype -> Type Location -> m ()
-instantiateTypeL a _A0 = do
+instantiateTypeL a _A0 = trace "instantiateTypeL" $ do
     _Γ0 <- get
 
     (_Γ', _Γ) <- Context.splitOnUnsolvedType a _Γ0 `orDie` MissingVariable a _Γ0
@@ -922,7 +931,7 @@ instantiateTypeL a _A0 = do
 instantiateTypeR
     :: (MonadState Status m, MonadError TypeInferenceError m)
     => Type Location -> Existential Monotype -> m ()
-instantiateTypeR _A0 a = do
+instantiateTypeR _A0 a = trace "instantiateTypeR" $ do
     _Γ0 <- get
 
     (_Γ', _Γ) <- Context.splitOnUnsolvedType a _Γ0 `orDie` MissingVariable a _Γ0
@@ -1379,25 +1388,52 @@ infer e0 = do
                     return Type.List{..}
 
         Syntax.Tensor{..} -> do
-            existentialShape <- fresh
-            case Seq.viewl elements of
-                EmptyL -> do
-                    existential <- fresh
 
-                    push (Context.UnsolvedType existential)
+            let -- aux :: Monad m => Seq.Seq (Syntax Location (Type Location, Value)) -> [Type Location] -> m (Type Location, [Int])
+                aux elems accBaseTypes = case Seq.viewl elems of
+                  EmptyL -> error "TODO: type error for empty tensors"
+                  y :< ys -> do
+                    (yElementType, yShape) <- syntaxes accBaseTypes y
+                    ysShapesAndTypes <- traverse (syntaxes accBaseTypes) ys
+                    return $
+                      if True -- (all (\(type_, shape ) -> trace ("yShape: " <> show yShape) yShape == shape && trace ("yType: " <> show yElementType) yElementType == type_) (trace ("ys: " <> show ysShapesAndTypes) ysShapesAndTypes))
+                      then (traceShowId yElementType, length elems : traceShowId yShape)
+                      else error "TODO: unequal child shapes"
 
-                    return Type.Tensor{ type_ = Type.UnsolvedType{..}, shape = Type.UnsolvedType{ existential = existentialShape, .. }, ..} 
-                y :< ys -> do
-                    type_ <- infer y
+                -- syntaxes :: MonadState Status m => Syntax Location (Type Location, Value) -> m ((Maybe (Type Location), [Int]))
+                syntaxes accBaseTypes syn = case syn of
+                  Syntax.Scalar {} -> (,) <$> infer syn <*> pure []
+                  Syntax.List { elements } -> aux elements accBaseTypes
 
-                    let process element = do
-                            _Γ <- get
+                    
+            (type_, tensorShape) <- aux elements []
+            return $ Type.Tensor {
+              shape = Type.Shape {
+                  tensorShape = Monotype.TensorShape tensorShape,
+                  ..
+                  }
+              , ..
+              }
+                    
+            -- existentialShape <- fresh
+            -- case Seq.viewl elements of
+            --     EmptyL -> do
+            --         existential <- fresh
 
-                            check element (Context.solveType _Γ type_)
+            --         push (Context.UnsolvedType existential)
 
-                    traverse_ process ys
+            --         return Type.Tensor{ type_ = Type.UnsolvedType{..}, shape = Type.UnsolvedType{ existential = existentialShape, .. }, ..} 
+            --     y :< ys -> do
+            --         type_ <- infer y
 
-                    return Type.Tensor{ shape = Type.UnsolvedType{ existential = existentialShape, .. }, ..}
+            --         let process element = do
+            --                 _Γ <- get
+
+            --                 check element (Context.solveType _Γ type_)
+
+            --         traverse_ process ys
+
+            --         return Type.Tensor{ shape = Type.UnsolvedType{ existential = existentialShape, .. }, ..}
 
         Syntax.Record{..} -> do
             let process (field, value) = do
@@ -1878,6 +1914,35 @@ infer e0 = do
                     )
                 )
 
+        Syntax.Builtin{ builtin = Syntax.TensorFromList, .. } -> do
+            
+            return
+              Type.Forall
+                { nameLocation = Syntax.location e0
+                , name = "shape"
+                , domain = Domain.Type
+                , type_ =
+                  
+                        Type.Forall
+                                { nameLocation = Syntax.location e0
+                                , name = "a"
+                                , domain = Domain.Type
+                                , type_ = Type.List { type_ = var "a", .. }
+                                  ~>
+                                  -- Type.Optional {
+                                  --       type_ = Type.Tensor {
+                                  --         type_ = var "a",
+                                  --         shape = var "shape",
+                                  --         ..
+                                  --       }, ..
+                                  --  }
+                                   Type.Tensor { type_ = var "a", shape = var "shape", .. }
+                                , ..
+                                }
+                , ..
+                }
+
+
         Syntax.Embed{ embedded = (type_, _) } -> do
             return type_
 
@@ -1923,7 +1988,7 @@ check
 -- a desirable property!
 
 -- →I
-check Syntax.Lambda{ location = _, ..} Type.Function{..} = do
+check Syntax.Lambda{ location = _, ..} Type.Function{..} = trace "check" do
     scoped (Context.Annotation name input) do
         check body output
 
@@ -2114,7 +2179,9 @@ typeWith context syntax = do
 
     (_A, Status{ context = _Δ }) <- State.runStateT (infer syntax) initialStatus
 
-    return (Context.complete _Δ _A)
+    let completed = Context.complete  _Δ _A
+
+    return completed
 
 -- | A data type holding all errors related to type inference
 data TypeInferenceError

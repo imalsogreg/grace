@@ -22,7 +22,7 @@ import Data.String (IsString(..))
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Grace.Existential (Existential)
-import Grace.Pretty (Pretty(..), builtin)
+import Grace.Pretty (Pretty(..), builtin, prettyList)
 import Language.Haskell.TH.Syntax (Lift)
 
 {-| A monomorphic type
@@ -87,6 +87,9 @@ instance Pretty Scalar where
     pretty Natural = builtin "Natural"
     pretty Integer = builtin "Integer"
     pretty Text    = builtin "Text"
+
+instance Pretty TensorShape where
+  pretty (TensorShape shape) = prettyList shape
 
 -- | A monomorphic record type
 data Record = Fields [(Text, Monotype)] RemainingFields

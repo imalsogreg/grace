@@ -123,6 +123,7 @@ parseToken =
             , JSONFold       <$ symbol "JSON/fold"
             , NaturalFold    <$ symbol "Natural/fold"
             , TextEqual      <$ symbol "Text/equal"
+            , TensorFromList <$ symbol "Tensor/fromList"
             , False_         <$ symbol "false"
             , True_          <$ symbol "true"
             , Null           <$ symbol "null"
@@ -478,6 +479,7 @@ data Token
     | Or
     | Plus
     | Tensor
+    | TensorFromList
     | Text
     | TextEqual
     | TextLiteral Text

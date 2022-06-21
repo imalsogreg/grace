@@ -8,6 +8,7 @@ module Grace.Pretty
     , renderIO
     , toText
     , Pretty(..)
+    , Pretty.prettyList
       -- * Highlighting
     , keyword
     , punctuation

@@ -49,6 +49,7 @@ import Grace.Pretty (Pretty(..), builtin, keyword, label, operator, punctuation)
 import Language.Haskell.TH.Syntax (Lift)
 import Prettyprinter (Doc)
 import Prettyprinter.Render.Terminal (AnsiStyle)
+import Grace.Location (Location(..))
 
 import Grace.Monotype
     (Monotype, RemainingAlternatives(..), RemainingFields(..), Scalar(..))
@@ -119,6 +120,10 @@ data Type s
     -- < X: X | Y: Y | a? >
     | Scalar { location :: s, scalar :: Scalar }
     | Shape { location :: s, tensorShape :: Monotype.TensorShape }
+    -- ^ Shape type for specifying a Tensor's shape
+    --
+    -- >>> pretty @(Type ()) (Shape () (Monotype.TensorShape [1,2]))
+    -- [1,2]
     | Tensor { location :: s, shape :: Type s, type_ :: Type s }
     deriving stock (Eq, Functor, Generic, Lift, Show)
 
@@ -639,6 +644,17 @@ prettyApplicationType List{..} = Pretty.group (Pretty.flatAlt long short)
             <>  "  "
             <>  prettyPrimitiveType type_
             )
+prettyApplicationType Tensor{..} = Pretty.group (Pretty.flatAlt long short)
+  where
+    short = builtin "Tensor" <> " " <> prettyPrimitiveType shape <> " " <> prettyPrimitiveType type_
+
+    long =
+        Pretty.align
+            (   builtin "Tensor"
+            <>  Pretty.hardline
+            <>  "  "
+            <>  prettyPrimitiveType type_
+            )
 prettyApplicationType other =
     prettyPrimitiveType other
 
@@ -653,6 +669,8 @@ prettyPrimitiveType Union{..} =
     prettyUnionType alternatives
 prettyPrimitiveType Scalar{..} =
     pretty scalar
+prettyPrimitiveType Shape{..} =
+    pretty tensorShape
 prettyPrimitiveType other =
     Pretty.group (Pretty.flatAlt long short)
   where

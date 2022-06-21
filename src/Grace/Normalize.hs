@@ -17,6 +17,7 @@ import Data.Scientific (Scientific)
 import Data.Sequence (Seq(..), ViewL(..))
 import Data.Text (Text)
 import Data.Void (Void)
+import Debug.Trace (trace)
 import Grace.Location (Location)
 import Grace.Syntax (Builtin(..), Scalar(..), Syntax)
 import Grace.Type (Type)
@@ -248,7 +249,7 @@ evaluate env syntax =
         Syntax.Embed{ embedded = (_, value) } ->
             value
 
-        Syntax.Tensor{..} ->
+        Syntax.Tensor{..} -> trace "Evaluate Syntax.Tensor" $
             Value.Tensor (fmap (evaluate env) elements)
 
 {-| This is the function that implements function application, including
@@ -367,6 +368,8 @@ apply (Value.Builtin RealShow) (Value.Scalar (Integer n)) =
     Value.Scalar (Text (Text.pack (show n)))
 apply (Value.Builtin RealShow) (Value.Scalar (Real n)) =
     Value.Scalar (Text (Text.pack (show n)))
+apply (Value.Builtin TensorFromList) (Value.List xs) =
+    Value.Tensor xs
 apply
     (Value.Application (Value.Builtin TextEqual) (Value.Scalar (Text l)))
     (Value.Scalar (Text r)) =

@@ -371,6 +371,7 @@ data Builtin
     -- ^
     --   >>> pretty TextEqual
     --   Text/equal
+    | TensorFromList
     deriving (Bounded, Enum, Eq, Generic, Lift, Show)
 
 instance Pretty Builtin where
@@ -395,6 +396,7 @@ instance Pretty Builtin where
     pretty ListTake       = Pretty.builtin "List/take"
     pretty NaturalFold    = Pretty.builtin "Natural/fold"
     pretty TextEqual      = Pretty.builtin "Text/equal"
+    pretty TensorFromList = Pretty.builtin "Tensor/fromList"
 
 -- | Pretty-print an expression
 prettyExpression :: Pretty a => Syntax s a -> Doc AnsiStyle

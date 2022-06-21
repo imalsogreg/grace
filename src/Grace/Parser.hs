@@ -29,6 +29,7 @@ import Control.Applicative.Combinators (endBy, sepBy)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Data.Functor (void, ($>))
 import Data.List.NonEmpty (NonEmpty(..), some1)
+import Data.List (foldl')
 import Data.Scientific (Scientific)
 import Data.Text (Text)
 import Grace.Input (Input(..))
@@ -206,6 +207,7 @@ render t = case t of
     Lexer.Or               -> "||"
     Lexer.Plus             -> "+"
     Lexer.Tensor           -> "Tensor"
+    Lexer.TensorFromList   -> "Tensor/fromList"
     Lexer.Text             -> "Text"
     Lexer.TextEqual        -> "Text/equal"
     Lexer.TextLiteral _    -> "a text literal"
@@ -325,6 +327,28 @@ grammar = mdo
                 token Lexer.CloseBracket
 
                 return Syntax.List{ elements = Seq.fromList elements, .. }
+
+        -- <|> ((\location shapeElements elements ->
+        --         if (foldl' (*) 1 shapeElements :: Int) == (length elements:: Int) 
+        --         then Just (Syntax.Tensor { elements = Seq.fromList elements, ..})
+        --         else Nothing
+        --      )
+        --      <$> locatedToken Lexer.Tensor
+        --      <*> (int `sepBy` token Lexer.Comma)
+        --      <*> (expression `sepBy` token Lexer.Comma)
+        --     )
+        --    )
+
+        <|> ((\location elements -> Syntax.Tensor { .. }
+             )
+             <$> locatedToken Lexer.Tensor
+             <*> (do
+                   token Lexer.OpenBracket
+                   elements <- expression `sepBy` token Lexer.Comma
+                   token Lexer.CloseBracket
+                   pure (Seq.fromList elements)
+                 )
+           )
 
         <|> do  location <- locatedToken Lexer.OpenBrace
                 optional (token Lexer.Comma)
@@ -452,6 +476,10 @@ grammar = mdo
 
                 return Syntax.Builtin{ builtin = Syntax.TextEqual, .. }
 
+        <|> do  location <- locatedToken Lexer.TensorFromList
+
+                return Syntax.Builtin{ builtin = Syntax.TensorFromList, .. }
+
         <|> do  ~(location, t) <- locatedText
 
                 return Syntax.Scalar{ scalar = Syntax.Text t, .. }
@@ -557,13 +585,9 @@ grammar = mdo
 
                 return Type.Optional{..}
 
-        <|> ( (\location shapeElements type_ -> Type.Tensor { shape = Type.Shape { tensorShape = Monotype.TensorShape shapeElements, .. }, .. })
+        <|> ( (\location shape type_ -> Type.Tensor { .. })
               <$> locatedToken Lexer.Tensor
-              <*> (do token Lexer.OpenBracket
-                      r <- int `sepBy` token Lexer.Comma
-                      token Lexer.CloseBracket
-                      return r
-                  )
+              <*> primitiveType
               <*> primitiveType
             )
 
@@ -630,6 +654,10 @@ grammar = mdo
                 t <- quantifiedType
                 token Lexer.CloseParenthesis
                 return t
+        <|> do location <- locatedToken Lexer.OpenBracket
+               elements <- int `sepBy` token Lexer.Comma
+               token Lexer.CloseBracket
+               return (Type.Shape { tensorShape = Monotype.TensorShape elements, .. })
         )
 
     fieldType <- rule do
