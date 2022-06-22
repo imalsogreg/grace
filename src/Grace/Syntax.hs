@@ -620,6 +620,9 @@ prettyPrimitiveExpression Variable{..}
     | otherwise  = label (pretty name) <> "@" <> Pretty.scalar (pretty index)
 prettyPrimitiveExpression Alternative{..} =
     Type.prettyAlternativeLabel name
+prettyPrimitiveExpression Tensor{ .. } =
+    let list = List {..} in
+    "Tensor " <> prettyPrimitiveExpression list
 prettyPrimitiveExpression List{ elements = [] } =
     punctuation "[" <> " " <> punctuation "]"
 prettyPrimitiveExpression List{ elements = element :<| elements } =
