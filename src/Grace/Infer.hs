@@ -34,11 +34,11 @@ import Control.Exception.Safe (Exception(..))
 import Control.Monad (when)
 import Control.Monad.Except (MonadError(..))
 import Control.Monad.State.Strict (MonadState)
-import Data.Foldable (traverse_, toList)
+import Data.Foldable (traverse_)
 import Data.Sequence (ViewL(..))
 import Data.Text (Text)
 import Data.Void (Void)
-import Debug.Trace (trace, traceShow, traceShowId)
+import Debug.Trace (trace, traceShowId)
 import Grace.Context (Context, Entry)
 import Grace.Existential (Existential)
 import Grace.Location (Location(..))
@@ -1392,9 +1392,10 @@ infer e0 = do
             let -- aux :: Monad m => Seq.Seq (Syntax Location (Type Location, Value)) -> [Type Location] -> m (Type Location, [Int])
                 aux elems accBaseTypes = case Seq.viewl elems of
                   EmptyL -> error "TODO: type error for empty tensors"
-                  y :< ys -> do
+                  y :< _ys -> do
                     (yElementType, yShape) <- syntaxes accBaseTypes y
-                    ysShapesAndTypes <- traverse (syntaxes accBaseTypes) ys
+                    -- TODO: Check that all peers are consistent in shape and type.
+                    -- ysShapesAndTypes <- traverse (syntaxes accBaseTypes) ys
                     return $
                       if True -- (all (\(type_, shape ) -> trace ("yShape: " <> show yShape) yShape == shape && trace ("yType: " <> show yElementType) yElementType == type_) (trace ("ys: " <> show ysShapesAndTypes) ysShapesAndTypes))
                       then (traceShowId yElementType, length elems : traceShowId yShape)
@@ -1403,7 +1404,8 @@ infer e0 = do
                 -- syntaxes :: MonadState Status m => Syntax Location (Type Location, Value) -> m ((Maybe (Type Location), [Int]))
                 syntaxes accBaseTypes syn = case syn of
                   Syntax.Scalar {} -> (,) <$> infer syn <*> pure []
-                  Syntax.List { elements } -> aux elements accBaseTypes
+                  Syntax.List { elements = list_elements } -> aux list_elements accBaseTypes
+                  _ -> error "TODO: Inference error for non-tensory children"
 
                     
             (type_, tensorShape) <- aux elements []

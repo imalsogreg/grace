@@ -49,7 +49,6 @@ import Grace.Pretty (Pretty(..), builtin, keyword, label, operator, punctuation)
 import Language.Haskell.TH.Syntax (Lift)
 import Prettyprinter (Doc)
 import Prettyprinter.Render.Terminal (AnsiStyle)
-import Grace.Location (Location(..))
 
 import Grace.Monotype
     (Monotype, RemainingAlternatives(..), RemainingFields(..), Scalar(..))
