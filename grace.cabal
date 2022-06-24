@@ -12,6 +12,7 @@ library
   build-depends:       base
                      , aeson < 2.0
                      , Earley
+                     , bytestring
                      , containers
                      , filepath
                      , generic-lens
@@ -46,6 +47,7 @@ library
                      , Grace.Syntax
                      , Grace.HTTP
                      , Grace.TH
+                     , Grace.Triton
                      , Grace.Type
                      , Grace.Value
                      , Grace.Width

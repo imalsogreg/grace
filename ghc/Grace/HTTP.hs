@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE NamedFieldPuns     #-}
 
 {-| This module provides a uniform interface for making HTTP requests using both
     GHC and GHCJS
@@ -9,6 +10,7 @@ module Grace.HTTP
     , Manager
     , newManager
     , fetch
+    , fetchWithBody
     , renderError
     ) where
 
@@ -19,6 +21,7 @@ import Network.HTTP.Client (HttpExceptionContent(..), Manager)
 
 import qualified Control.Exception as Exception
 import qualified Data.Text as Text
+import qualified Data.ByteString as BS
 import qualified Data.Text.Encoding as Encoding
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified Data.Text.Lazy.Encoding as Lazy.Encoding
@@ -59,6 +62,32 @@ fetch manager url = do
     case Lazy.Encoding.decodeUtf8' lazyBytes of
         Left exception -> Exception.throwIO (NotUTF8 exception)
         Right lazyText -> return (Text.Lazy.toStrict lazyText)
+
+
+-- | Post to a URL (using the @http-client@ package)
+fetchWithBody
+    :: Manager
+    -> Text
+    -- ^ URL
+    -> BS.ByteString
+    -- ^ Request Body
+    -> IO Text
+    -- ^ Response body
+fetchWithBody manager url requestBody = do
+    request <- HTTP.parseUrlThrow (Text.unpack url)
+    let postRequest = request { HTTP.method = "POST", HTTP.requestBody = HTTP.RequestBodyBS requestBody }
+
+    let handler :: HTTP.HttpException -> IO a
+        handler httpException = Exception.throwIO (HttpException httpException)
+
+    response <- Exception.handle handler (HTTP.httpLbs postRequest manager)
+
+    let lazyBytes = HTTP.responseBody response
+
+    case Lazy.Encoding.decodeUtf8' lazyBytes of
+        Left exception -> Exception.throwIO (NotUTF8 exception)
+        Right lazyText -> return (Text.Lazy.toStrict lazyText)
+
 
 -- | Render an `HttpException` as `Text`
 renderError :: HttpException -> Text
