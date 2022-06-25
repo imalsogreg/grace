@@ -97,6 +97,7 @@ data Value
     | Scalar Scalar
     | Operator Value Operator Value
     | Tensor (Seq Value)
+    | TritonCall Text
     deriving stock (Eq, Show)
 
 instance IsString Value where

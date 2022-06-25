@@ -114,6 +114,7 @@ data Syntax s a
     | Builtin { location :: s, builtin :: Builtin }
     | Embed { location :: s, embedded :: a }
     | Tensor { location :: s, elements :: Seq (Syntax s a) } -- TODO Should this be an Array, not Seq?
+    | TritonCall { location :: s, modelName :: Text }
     deriving stock (Eq, Foldable, Functor, Generic, Lift, Show, Traversable)
 
 instance Plated (Syntax s a) where
@@ -174,6 +175,8 @@ instance Plated (Syntax s a) where
             Tensor{ elements = oldElements, .. } -> do
                 newElements <- traverse onSyntax oldElements
                 return Tensor{ elements = newElements, .. }
+            TritonCall {..} -> do
+              pure TritonCall{..}
 
 instance Bifunctor Syntax where
     first f Variable{..} =
@@ -210,6 +213,8 @@ instance Bifunctor Syntax where
         Embed{ location = f location, .. }
     first f Tensor{..} =
         Tensor{ location = f location, elements = fmap (first f) elements, .. }
+    first f TritonCall{..} =
+        TritonCall { location = f location, .. }
 
     second = fmap
 

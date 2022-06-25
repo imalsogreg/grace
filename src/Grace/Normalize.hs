@@ -16,14 +16,13 @@ module Grace.Normalize
 import Data.Scientific (Scientific)
 import Data.Sequence (Seq(..), ViewL(..))
 import Data.Text (Text)
-import Data.Maybe (fromJust) -- temporary
 import Data.Void (Void)
 import Debug.Trace (trace)
 import Grace.Location (Location)
 import Grace.Infer (typeOf)
 import Grace.Syntax (Builtin(..), Scalar(..), Syntax)
 import Grace.Type (Type(..))
-import Grace.Monotype (Monotype, TensorShape(..))
+import Grace.Monotype (TensorShape(..))
 import Grace.Pretty (renderStrict)
 import Grace.Value (Closure(..), Value)
 import Prelude hiding (succ)
@@ -257,11 +256,13 @@ evaluate type_ env syntax =
         Syntax.Tensor{..} -> trace "Evaluate Syntax.Tensor" $
             Value.Tensor (fmap (evaluate type_ env) elements)
 
+        Syntax.TritonCall{..} -> Value.TritonCall modelName
+
 {-| This is the function that implements function application, including
     evaluating anonymous functions and evaluating all built-in functions.
 -}
 apply :: Value -> Value -> Type Location -> Value
-apply (Value.Lambda (Closure name capturedEnv body)) argument type_ =
+apply (Value.Lambda (Closure name capturedEnv body)) argument _ =
     evaluate Nothing ((name, argument) : capturedEnv) body
 apply
     (Value.Merge (Value.Record alternativeHandlers))
@@ -286,6 +287,8 @@ apply (Value.Builtin ListLast) (Value.List (_ :|> x)) _ =
     Value.Application (Value.Alternative "Some") x
 apply (Value.Builtin ListReverse) (Value.List xs) _ =
     Value.List (Seq.reverse xs)
+apply (Value.TritonCall modelname) tensor@(Value.Tensor xs) _ =
+    error "TODO: TRITON CALL APPLICATION"
 apply
     (Value.Application
         (Value.Application (Value.Builtin ListEqual) f)
@@ -522,5 +525,7 @@ quote names value =
 
         Value.Tensor elements ->
             Syntax.Tensor { elements = fmap  (quote names) elements, .. }
+        Value.TritonCall name ->
+          Syntax.Variable { index = 0, .. }
   where
     location = ()

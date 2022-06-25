@@ -30,6 +30,7 @@ import qualified Grace.HTTP as HTTP
 import qualified Grace.Interpret as Interpret
 import qualified Grace.Normalize as Normalize
 import qualified Grace.Pretty as Pretty
+import qualified Grace.Triton as Triton
 import qualified Grace.Type as Type
 import qualified Grace.Width as Width
 import qualified System.Console.Haskeline.Completion as Completion
@@ -40,11 +41,12 @@ import qualified System.IO as IO
 repl :: IO ()
 repl = do
     manager <- HTTP.newManager
+    context0 <- Triton.loadContext
 
     let interpret input = do
             context <- get
 
-            Except.runExceptT (Interpret.interpretWith context Nothing manager input)
+            Except.runExceptT (Interpret.interpretWith (context0 <> context) Nothing manager input)
 
     let err e =
             liftIO (Text.IO.hPutStrLn IO.stderr (Text.pack (displayException e)))

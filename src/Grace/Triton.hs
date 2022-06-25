@@ -9,17 +9,15 @@
 
 module Grace.Triton where
 
-import Data.List (replicate, uncons)
+import Data.List (uncons)
 import Data.ByteString.Lazy( fromStrict, toStrict )
 import Data.Traversable (forM)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text (Text, unpack)
-import Data.Aeson (eitherDecode, withObject, (.:), encode, Value, object, FromJSON(..), ToJSON(..), (.=), withText)
+import Data.Aeson (eitherDecode, withObject, (.:), encode, object, FromJSON(..), ToJSON(..), (.=), withText)
 import GHC.Generics
-import Grace.Context (Context)
 import Grace.HTTP as HTTP
 import Grace.Type (Type(..))
-import Grace.Context (Context, Entry(..))
 import qualified Grace.Pretty as Pretty
 import qualified Grace.Type as GraceType
 import qualified Grace.Value as GraceValue
@@ -28,14 +26,11 @@ import qualified Grace.Monotype as Monotype
 
 -- * Triton Grace primitives
 
-loadContext :: IO (Context Location, [(Text, GraceValue.Value)])
+loadContext :: IO ( [(Text, GraceType.Type Location, GraceValue.Value)])
 loadContext = do
   manager <- HTTP.newManager
   models <- listModels manager
-  let tritonPrimitives = tritonPrimitivesForModel <$> models
-  let context =  (\(name, type_, _) -> Annotation name type_) <$> tritonPrimitives
-  let entries = (\(name, _, val) -> (name, val)) <$> tritonPrimitives
-  return (context, entries)
+  return $ tritonPrimitivesForModel <$> models
   
 
 tritonPrimitivesForModel :: ModelMetadata -> (Text, GraceType.Type Location, GraceValue.Value)
@@ -65,7 +60,7 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
       _ -> inputRecord
     outputType = case uncons mmOutputs of
       Just (tensor, []) -> snd $ reifyTensor tensor
-      Nothing -> outputRecord
+      _ -> outputRecord
     -- type_ = foldr (\inputTensor accType -> GraceType.Function
     --                 { input = GraceType.Tensor
     --                   { shape = GraceType.Shape { tensorShape = Monotype.TensorShape (tvtShape inputTensor), .. }
@@ -78,7 +73,7 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
     type_ = GraceType.Function
       { input = inputType, output = outputType, .. }
   in
-    ("triton_" <> mmName, type_, undefined)
+    ("triton_" <> mmName, type_, GraceValue.TritonCall ("triton_" <> mmName))
 
 
 -- * Inference
@@ -205,7 +200,7 @@ test = do
                }]
             }
   models <- listModels manager
-  res <- infer manager "mnist" req
+  _ <- infer manager "mnist" req
 
   let (_, ty, _) = tritonPrimitivesForModel (models !! 0)
   putStrLn (unpack $ Pretty.renderStrict True 60 ty)
