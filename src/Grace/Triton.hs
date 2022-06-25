@@ -9,14 +9,77 @@
 
 module Grace.Triton where
 
-import Data.List (replicate)
+import Data.List (replicate, uncons)
 import Data.ByteString.Lazy( fromStrict, toStrict )
 import Data.Traversable (forM)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text (Text, unpack)
 import Data.Aeson (eitherDecode, withObject, (.:), encode, Value, object, FromJSON(..), ToJSON(..), (.=), withText)
 import GHC.Generics
+import Grace.Context (Context)
 import Grace.HTTP as HTTP
+import Grace.Type (Type(..))
+import Grace.Context (Context, Entry(..))
+import qualified Grace.Pretty as Pretty
+import qualified Grace.Type as GraceType
+import qualified Grace.Value as GraceValue
+import Grace.Location (Location(..), Offset(..))
+import qualified Grace.Monotype as Monotype
+
+-- * Triton Grace primitives
+
+loadContext :: IO (Context Location, [(Text, GraceValue.Value)])
+loadContext = do
+  manager <- HTTP.newManager
+  models <- listModels manager
+  let tritonPrimitives = tritonPrimitivesForModel <$> models
+  let context =  (\(name, type_, _) -> Annotation name type_) <$> tritonPrimitives
+  let entries = (\(name, _, val) -> (name, val)) <$> tritonPrimitives
+  return (context, entries)
+  
+
+tritonPrimitivesForModel :: ModelMetadata -> (Text, GraceType.Type Location, GraceValue.Value)
+tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
+  let
+    location = Location
+      { name = "triton"
+      , code = "http"
+      , offset = Offset 0
+      }
+    reifyTensor (TritonTensorType { tvtName, tvtShape }) = (tvtName, GraceType.Tensor
+      { shape = GraceType.Shape {tensorShape = Monotype.TensorShape tvtShape, ..}
+      , type_ = GraceType.Scalar { scalar = Monotype.Real, .. }
+      , ..
+      })
+
+    inputRecord = Record
+      { fields = GraceType.Fields (reifyTensor <$> mmInputs) Monotype.EmptyFields
+      , ..
+      }
+    outputRecord = Record
+      { fields = GraceType.Fields (reifyTensor <$> mmOutputs) Monotype.EmptyFields
+      , ..
+      }
+    inputType = case uncons mmInputs of
+      Just (tensor, []) -> snd $ reifyTensor tensor
+      _ -> inputRecord
+    outputType = case uncons mmOutputs of
+      Just (tensor, []) -> snd $ reifyTensor tensor
+      Nothing -> outputRecord
+    -- type_ = foldr (\inputTensor accType -> GraceType.Function
+    --                 { input = GraceType.Tensor
+    --                   { shape = GraceType.Shape { tensorShape = Monotype.TensorShape (tvtShape inputTensor), .. }
+    --                   , type_ = GraceType.Scalar { scalar = Monotype.Real, .. }
+    --                   , ..
+    --                   }
+    --                 , output = accType
+    --                 , ..
+    --                 }) outputType mmInputs
+    type_ = GraceType.Function
+      { input = inputType, output = outputType, .. }
+  in
+    ("triton_" <> mmName, type_, undefined)
+
 
 -- * Inference
 
@@ -93,8 +156,8 @@ instance FromJSON RepositoryModel where
 
 data ModelMetadata = ModelMetadata
   { mmName :: Text
-  , mmInputs :: [TritonVectorType]
-  , mmOutputs :: [TritonVectorType]
+  , mmInputs :: [TritonTensorType]
+  , mmOutputs :: [TritonTensorType]
   }
   deriving (Eq, Show)
 
@@ -105,29 +168,27 @@ instance FromJSON ModelMetadata where
     mmOutputs <- o .: "outputs"
     return ModelMetadata {..}
 
-data TritonVectorType = TritonVectorType
+data TritonTensorType = TritonTensorType
   { tvtName :: Text
   , tvtDatatype :: DataType
   , tvtShape :: [Int]
   }
   deriving (Eq, Show)
 
-instance FromJSON TritonVectorType where
-  parseJSON = withObject "TritonVectorType" $ \o -> do
+instance FromJSON TritonTensorType where
+  parseJSON = withObject "TritonTensorType" $ \o -> do
     tvtName <- o .: "name"
     tvtDatatype <- o .: "datatype"
     tvtShape <- o .: "shape"
-    return TritonVectorType {..}
+    return TritonTensorType {..}
   
 listModels :: Manager -> IO [ModelMetadata]
 listModels manager = do
   resp <- HTTP.fetchWithBody manager "http://localhost:8000/v2/repository/index" ""
   let (Right (repositoryResponse :: [RepositoryModel])) = eitherDecode (fromStrict $ encodeUtf8 resp)
-  print repositoryResponse
   let modelNames = modelName <$> repositoryResponse
   forM modelNames $ \modelName -> do
     modelResp <- HTTP.fetch manager ("http://localhost:8000/v2/models/" <> modelName)
-    print modelResp
     let (Right modelMetadata) = eitherDecode . fromStrict . encodeUtf8 $ modelResp
     return modelMetadata
 
@@ -143,6 +204,8 @@ test = do
                , data_ = replicate (28 * 28) 1.0
                }]
             }
-  listModels manager >>= print
+  models <- listModels manager
   res <- infer manager "mnist" req
-  print res
+
+  let (_, ty, _) = tritonPrimitivesForModel (models !! 0)
+  putStrLn (unpack $ Pretty.renderStrict True 60 ty)
