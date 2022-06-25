@@ -108,7 +108,7 @@ interpretWith bindings maybeAnnotation manager input = do
 
                     return (variable, value)
 
-            return (inferred, Normalize.evaluate evaluationContext resolvedExpression)
+            return (inferred, Normalize.evaluate Nothing evaluationContext resolvedExpression)
 
 remote :: Input -> Bool
 remote (URI uri) = any (`elem` schemes) (URI.uriScheme uri)
