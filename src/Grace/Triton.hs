@@ -11,6 +11,7 @@ module Grace.Triton where
 
 import Data.List (replicate)
 import Data.ByteString.Lazy( fromStrict, toStrict )
+import Data.Traversable (forM)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text (Text, unpack)
 import Data.Aeson (eitherDecode, withObject, (.:), encode, Value, object, FromJSON(..), ToJSON(..), (.=), withText)
@@ -38,7 +39,7 @@ instance ToJSON InferenceRequest where
 instance FromJSON InferenceResponse where
 
 data TritonTensor = TritonTensor
-  { name :: Text
+  { tensorName :: Text
   , datatype :: DataType
   , shape :: [Int]
   , data_ :: [Float]
@@ -46,8 +47,8 @@ data TritonTensor = TritonTensor
   deriving (Eq, Show, Generic)
 
 instance ToJSON TritonTensor where
-  toJSON TritonTensor { name, datatype, shape, data_ } = object
-    [ "name" .= name
+  toJSON TritonTensor { tensorName, datatype, shape, data_ } = object
+    [ "name" .= tensorName
     , "datatype" .= datatype
     , "shape" .= shape
     , "data" .= data_
@@ -55,7 +56,7 @@ instance ToJSON TritonTensor where
 
 instance FromJSON TritonTensor where
   parseJSON = withObject "TritonTensor" $ \o -> do
-    name <- o .: "name"
+    tensorName <- o .: "name"
     datatype <- o .: "datatype"
     shape <- o .: "shape"
     data_ <- o .: "data"
@@ -76,18 +77,72 @@ instance FromJSON DataType where
 
 -- * Model Reflection (TOOD)
 
--- data Model
+data RepositoryModel = RepositoryModel
+  { modelName :: Text
+  , version :: Text
+  , state :: Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON RepositoryModel where
+  parseJSON = withObject "RepositoryModel" $ \o -> do
+    modelName <- o .: "name"
+    version <- o .: "version"
+    state <- o .: "state"
+    return RepositoryModel {..}
+
+data ModelMetadata = ModelMetadata
+  { mmName :: Text
+  , mmInputs :: [TritonVectorType]
+  , mmOutputs :: [TritonVectorType]
+  }
+  deriving (Eq, Show)
+
+instance FromJSON ModelMetadata where
+  parseJSON = withObject "ModelMetadata" $ \o -> do
+    mmName <- o .: "name"
+    mmInputs <- o .: "inputs"
+    mmOutputs <- o .: "outputs"
+    return ModelMetadata {..}
+
+data TritonVectorType = TritonVectorType
+  { tvtName :: Text
+  , tvtDatatype :: DataType
+  , tvtShape :: [Int]
+  }
+  deriving (Eq, Show)
+
+instance FromJSON TritonVectorType where
+  parseJSON = withObject "TritonVectorType" $ \o -> do
+    tvtName <- o .: "name"
+    tvtDatatype <- o .: "datatype"
+    tvtShape <- o .: "shape"
+    return TritonVectorType {..}
+  
+listModels :: Manager -> IO [ModelMetadata]
+listModels manager = do
+  resp <- HTTP.fetchWithBody manager "http://localhost:8000/v2/repository/index" ""
+  let (Right (repositoryResponse :: [RepositoryModel])) = eitherDecode (fromStrict $ encodeUtf8 resp)
+  print repositoryResponse
+  let modelNames = modelName <$> repositoryResponse
+  forM modelNames $ \modelName -> do
+    modelResp <- HTTP.fetch manager ("http://localhost:8000/v2/models/" <> modelName)
+    print modelResp
+    let (Right modelMetadata) = eitherDecode . fromStrict . encodeUtf8 $ modelResp
+    return modelMetadata
+
 
 test :: IO ()
 test = do
   manager <- HTTP.newManager
   let req = InferenceRequest
             { inputs = [TritonTensor
-               { name = "Input3"
+               { tensorName = "Input3"
                , datatype = FP32
                , shape = [1,1,28,28]
                , data_ = replicate (28 * 28) 1.0
                }]
             }
+  listModels manager >>= print
   res <- infer manager "mnist" req
   print res
