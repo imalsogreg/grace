@@ -9,9 +9,11 @@
 
 module Grace.Triton where
 
-import Data.List (uncons)
+import Data.List (uncons, find)
+import Data.Foldable (toList)
 import Data.ByteString.Lazy( fromStrict, toStrict )
 import Data.Traversable (forM)
+import Data.Sequence (fromList)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text (Text, unpack)
 import Data.Aeson (eitherDecode, withObject, (.:), encode, object, FromJSON(..), ToJSON(..), (.=), withText)
@@ -20,6 +22,7 @@ import Grace.HTTP as HTTP
 import Grace.Type (Type(..))
 import qualified Grace.Pretty as Pretty
 import qualified Grace.Type as GraceType
+import qualified Grace.Syntax as GraceSyntax
 import qualified Grace.Value as GraceValue
 import Grace.Location (Location(..), Offset(..))
 import qualified Grace.Monotype as Monotype
@@ -31,7 +34,55 @@ loadContext = do
   manager <- HTTP.newManager
   models <- listModels manager
   return $ tritonPrimitivesForModel <$> models
+
+normalizeTritonCallApplication :: Text -> GraceValue.Value -> IO GraceValue.Value
+normalizeTritonCallApplication prefixedModelName value = do
+  manager <- HTTP.newManager
+
+  -- We have to look up models from scratch because single-input and single-output
+  -- values drop the name of the tensor.
+  models <- listModels manager
   
+  -- context <- loadContext -- TODO: It's pretty inefficient to do this every time we normalize an triton call.
+  let
+
+    -- This also only works for single-input, single-output models.
+    Just (ModelMetadata { mmName
+                        , mmInputs = [TritonTensorType{ tvtName = inputTensorName, tvtShape = inputTensorShape }]
+                        , mmOutputs = [modelOutput]
+                        }) =
+      find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
+
+    lowerElements :: GraceValue.Value -> [Float]
+    lowerElements v = case v of
+      GraceValue.Scalar ( GraceSyntax.Real r ) -> [realToFrac r]
+      GraceValue.Scalar ( GraceSyntax.Natural r ) -> [realToFrac r] -- TODO: It seems like a bug that we need this - we _are_ seeing Nats.
+      GraceValue.List (xs) -> concat $ lowerElements <$> xs
+      _ -> error ("val: " <> show v)
+
+    reifyElement v = GraceValue.Scalar (GraceSyntax.Real $ realToFrac v)
+
+    lowerTensorValue :: GraceValue.Value -> TritonTensor
+    lowerTensorValue t = case t of
+      GraceValue.Tensor elements ->
+        TritonTensor { tensorName = inputTensorName
+                     , datatype = FP32
+                     , shape = inputTensorShape
+                     , data_ = concat $ toList $ lowerElements <$> (elements)
+                     }
+      _ -> error "TODO: should have passed a grace Tensor value"
+
+    reifyTritonTensor :: TritonTensor -> GraceValue.Value
+    reifyTritonTensor TritonTensor { tensorName, shape, data_ } =
+      GraceValue.Tensor $ fromList $ fmap reifyElement data_
+
+  let inputs = case value of
+        tensor@(GraceValue.Tensor _) -> [lowerTensorValue tensor]
+        _ -> error "TODO: Unimplemented: input value is a record with multiple tensors"
+  InferenceResponse { outputs = [outputTensor] } <- infer manager mmName (InferenceRequest { inputs = inputs })
+
+  return $ reifyTritonTensor outputTensor
+      
 
 tritonPrimitivesForModel :: ModelMetadata -> (Text, GraceType.Type Location, GraceValue.Value)
 tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
@@ -61,15 +112,6 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
     outputType = case uncons mmOutputs of
       Just (tensor, []) -> snd $ reifyTensor tensor
       _ -> outputRecord
-    -- type_ = foldr (\inputTensor accType -> GraceType.Function
-    --                 { input = GraceType.Tensor
-    --                   { shape = GraceType.Shape { tensorShape = Monotype.TensorShape (tvtShape inputTensor), .. }
-    --                   , type_ = GraceType.Scalar { scalar = Monotype.Real, .. }
-    --                   , ..
-    --                   }
-    --                 , output = accType
-    --                 , ..
-    --                 }) outputType mmInputs
     type_ = GraceType.Function
       { input = inputType, output = outputType, .. }
   in

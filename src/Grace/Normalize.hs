@@ -22,10 +22,12 @@ import Grace.Location (Location)
 import Grace.Infer (typeOf)
 import Grace.Syntax (Builtin(..), Scalar(..), Syntax)
 import Grace.Type (Type(..))
+import qualified Grace.Triton as Triton
 import Grace.Monotype (TensorShape(..))
 import Grace.Pretty (renderStrict)
 import Grace.Value (Closure(..), Value)
 import Prelude hiding (succ)
+import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Data.HashMap.Strict.InsOrd as HashMap
 import qualified Data.List as List
@@ -287,8 +289,8 @@ apply (Value.Builtin ListLast) (Value.List (_ :|> x)) _ =
     Value.Application (Value.Alternative "Some") x
 apply (Value.Builtin ListReverse) (Value.List xs) _ =
     Value.List (Seq.reverse xs)
-apply (Value.TritonCall modelname) tensor@(Value.Tensor xs) _ =
-    error "TODO: TRITON CALL APPLICATION"
+apply (Value.TritonCall modelName) tensor@(Value.Tensor xs) _ =
+    unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensor
 apply
     (Value.Application
         (Value.Application (Value.Builtin ListEqual) f)
