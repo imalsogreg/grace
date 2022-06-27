@@ -38,7 +38,7 @@ import Data.Foldable (traverse_)
 import Data.Sequence (ViewL(..))
 import Data.Text (Text)
 import Data.Void (Void)
-import Debug.Trace (trace, traceShowId)
+-- import Debug.Trace (trace, traceShowId)
 import Grace.Context (Context, Entry)
 import Grace.Existential (Existential)
 import Grace.Location (Location(..))
@@ -152,7 +152,7 @@ wellFormedType
     :: MonadError TypeInferenceError m
     => Context Location -> Type Location -> m ()
 wellFormedType _Γ type0 =
-    trace "wellFormedType" $ case type0 of
+    case type0 of
         -- UvarWF
         Type.VariableType{..}
             | Context.Variable Domain.Type name `elem` _Γ -> do
@@ -249,7 +249,7 @@ wellFormedType _Γ type0 =
 subtype
     :: (MonadState Status m, MonadError TypeInferenceError m)
     => Type Location -> Type Location -> m ()
-subtype _A0 _B0 = trace "subtype" do
+subtype _A0 _B0 = do
     _Γ <- get
 
     case (_A0, _B0) of
@@ -763,7 +763,7 @@ subtype _A0 _B0 = trace "subtype" do
 instantiateTypeL
     :: (MonadState Status m, MonadError TypeInferenceError m)
     => Existential Monotype -> Type Location -> m ()
-instantiateTypeL a _A0 = trace "instantiateTypeL" $ do
+instantiateTypeL a _A0 = do
     _Γ0 <- get
 
     (_Γ', _Γ) <- Context.splitOnUnsolvedType a _Γ0 `orDie` MissingVariable a _Γ0
@@ -931,7 +931,7 @@ instantiateTypeL a _A0 = trace "instantiateTypeL" $ do
 instantiateTypeR
     :: (MonadState Status m, MonadError TypeInferenceError m)
     => Type Location -> Existential Monotype -> m ()
-instantiateTypeR _A0 a = trace "instantiateTypeR" $ do
+instantiateTypeR _A0 a = do
     _Γ0 <- get
 
     (_Γ', _Γ) <- Context.splitOnUnsolvedType a _Γ0 `orDie` MissingVariable a _Γ0
@@ -1398,7 +1398,7 @@ infer e0 = do
                     -- ysShapesAndTypes <- traverse (syntaxes accBaseTypes) ys
                     return $
                       if True -- (all (\(type_, shape ) -> trace ("yShape: " <> show yShape) yShape == shape && trace ("yType: " <> show yElementType) yElementType == type_) (trace ("ys: " <> show ysShapesAndTypes) ysShapesAndTypes))
-                      then (traceShowId yElementType, length elems : traceShowId yShape)
+                      then (yElementType, length elems : yShape)
                       else error "TODO: unequal child shapes"
 
                 -- syntaxes :: MonadState Status m => Syntax Location (Type Location, Value) -> m ((Maybe (Type Location), [Int]))
@@ -1990,7 +1990,7 @@ check
 -- a desirable property!
 
 -- →I
-check Syntax.Lambda{ location = _, ..} Type.Function{..} = trace "check" do
+check Syntax.Lambda{ location = _, ..} Type.Function{..} = do
     scoped (Context.Annotation name input) do
         check body output
 
