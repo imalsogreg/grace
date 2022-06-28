@@ -49,7 +49,7 @@ normalizeTritonCallApplication prefixedModelName value = do
     -- This also only works for single-input, single-output models.
     Just (ModelMetadata { mmName
                         , mmInputs = [TritonTensorType{ tvtName = inputTensorName, tvtShape = inputTensorShape }]
-                        , mmOutputs = [modelOutput]
+                        , mmOutputs = [_modelOutput]
                         }) =
       find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
 
@@ -73,7 +73,7 @@ normalizeTritonCallApplication prefixedModelName value = do
       _ -> error "TODO: should have passed a grace Tensor value"
 
     reifyTritonTensor :: TritonTensor -> GraceValue.Value
-    reifyTritonTensor TritonTensor { tensorName, shape, data_ } =
+    reifyTritonTensor TritonTensor { data_ } =
       GraceValue.Tensor $ fromList $ fmap reifyElement data_
 
   let inputs = case value of

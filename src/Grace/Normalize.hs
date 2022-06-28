@@ -289,7 +289,7 @@ apply (Value.Builtin ListLast) (Value.List (_ :|> x)) _ =
     Value.Application (Value.Alternative "Some") x
 apply (Value.Builtin ListReverse) (Value.List xs) _ =
     Value.List (Seq.reverse xs)
-apply (Value.TritonCall modelName) tensor@(Value.Tensor xs) _ =
+apply (Value.TritonCall modelName) tensor@(Value.Tensor _) _ =
     unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensor
 apply
     (Value.Application
