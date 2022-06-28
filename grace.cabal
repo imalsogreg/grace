@@ -34,6 +34,7 @@ library
   exposed-modules:     Grace.Context
                      , Grace.Domain
                      , Grace.Existential
+                     , Grace.Image
                      , Grace.Input
                      , Grace.Import
                      , Grace.Interpret
@@ -67,6 +68,7 @@ library
                      , http-client
                      , http-client-tls
                      , http-types
+                     , JuicyPixels
                      , optparse-applicative
                      , repline
                      , terminal-size
