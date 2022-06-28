@@ -20,8 +20,11 @@ import GHCJS.Foreign.Callback (Callback)
 import GHCJS.Types (JSVal)
 import Grace.Domain (Domain(..))
 import Grace.Input (Input(..))
+import qualified Grace.HTTP as HTTP
 import Grace.Monotype (RemainingAlternatives(..), RemainingFields(..))
 import Grace.Syntax (Scalar(..))
+import Grace.Location (Location)
+import qualified Grace.Triton as Triton
 import Grace.Value (Value(..))
 import JavaScript.Array (JSArray)
 import Numeric.Natural (Natural)
@@ -264,7 +267,7 @@ fromText = JSString.pack . Text.unpack
 valueToText :: Value -> Text
 valueToText = Pretty.renderStrict False 80 . Normalize.quote []
 
-renderValue :: IORef Natural -> JSVal -> Type s -> Value -> IO ()
+renderValue :: IORef Natural -> JSVal -> Type Location -> Value -> IO ()
 renderValue ref parent Type.Forall{ name, nameLocation, domain = Type, type_ } value = do
     -- If an expression has a polymorphic type, specialize the type to JSON
     let json = Type.Scalar{ location = nameLocation, scalar = Monotype.JSON }
@@ -433,7 +436,7 @@ renderValue ref parent Type.Function{ input, output } function = do
             let invoke = do
                     value <- get
 
-                    renderValue ref outputVal output (Normalize.apply function value)
+                    renderValue ref outputVal output (Normalize.apply function value output)
 
             callback <- Callback.asyncCallback invoke
 
@@ -831,6 +834,9 @@ main = do
     setAttribute spinner "class" "spinner-border text-primary"
     setAttribute spinner "role"  "status"
 
+    manager <- HTTP.newManager
+    tritonContext <- Triton.loadContext
+
     counter <- IORef.newIORef 0
 
     params <- getSearchParams
@@ -882,7 +888,8 @@ main = do
                 setDisplay output "none"
                 setDisplay error  "block"
 
-                result <- Except.runExceptT (Interpret.interpret input_)
+                -- result <- Except.runExceptT (Interpret.interpret input_)
+                result <- Except.runExceptT (Interpret.interpretWith tritonContext Nothing manager input_)
 
                 case result of
                     Left interpretError -> do

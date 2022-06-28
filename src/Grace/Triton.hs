@@ -14,7 +14,7 @@ import Data.Foldable (toList)
 import Data.ByteString.Lazy( fromStrict, toStrict )
 import Data.Traversable (forM)
 import Data.Sequence (fromList)
-import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text (Text, unpack)
 import Data.Aeson (eitherDecode, withObject, (.:), encode, object, FromJSON(..), ToJSON(..), (.=), withText)
 import GHC.Generics
@@ -123,7 +123,7 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
 infer :: HTTP.Manager -> Text -> InferenceRequest -> IO InferenceResponse
 infer manager modelName inferenceRequest = do
   let url = "http://localhost:8000/v2/models/" <> modelName <> "/infer"
-  res <- HTTP.fetchWithBody manager url (toStrict $ encode inferenceRequest)
+  res <- HTTP.fetchWithBody manager url (decodeUtf8 $ toStrict $ encode inferenceRequest)
   let (Right inferenceResponse) = eitherDecode . fromStrict $ encodeUtf8 res
   return inferenceResponse
 

@@ -9,14 +9,18 @@ module Grace.HTTP
     , Manager
     , newManager
     , fetch
+    , fetchWithBody
     , renderError
     ) where
 
 import Control.Exception (Exception(..))
 import Data.Text (Text)
 import GHCJS.Fetch (Request(..), JSPromiseException)
+import GHCJS.Marshal (toJSVal)
+import GHCJS.Marshal.Pure (pToJSVal)
 
 import qualified Data.JSString as JSString
+import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text as Text
 import qualified GHCJS.Fetch as Fetch
 
@@ -53,6 +57,28 @@ fetch _manager url = do
     jsString <- Fetch.responseText response
 
     return (Text.pack (JSString.unpack jsString))
+
+fetchWithBody
+    :: Manager
+    -> Text
+    -> Text
+    -- ^ Request body
+    -> IO Text
+    -- ^ Response body
+fetchWithBody _manager url requestBody = do
+    -- let reqBodyJSString = JSString.pack (BS.unpack requestBody)
+    reqBodyJSString <- (toJSVal requestBody)
+    let request =
+          Request
+            { reqUrl = JSString.pack (Text.unpack url)
+            , reqOptions = Fetch.defaultRequestOptions { Fetch.reqOptMethod = "POST"
+                                                 , Fetch.reqOptBody = Just reqBodyJSString
+                                                 }
+            }
+    resp <- Fetch.fetch request
+    jsString <- Fetch.responseText resp
+    return (Text.pack (JSString.unpack jsString))
+
 
 -- | Render an `HttpException` as `Text`
 renderError :: HttpException -> Text

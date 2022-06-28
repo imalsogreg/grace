@@ -1792,6 +1792,11 @@ infer e0 = do
                 , ..
                 }
 
+        Syntax.TritonCall {modelName, location} -> do
+
+            _Γ <- get
+            Context.lookup modelName 0 _Γ `orDie` UnboundVariable location modelName 0 -- TODO: what is "index"? is 0 ok?
+
         Syntax.Builtin{ builtin = Syntax.ListMap, .. } -> do
             return Type.Forall
                 { nameLocation = Syntax.location e0
