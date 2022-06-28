@@ -21,7 +21,6 @@ import Network.HTTP.Client (HttpExceptionContent(..), Manager)
 
 import qualified Control.Exception as Exception
 import qualified Data.Text as Text
-import qualified Data.ByteString as BS
 import qualified Data.Text.Encoding as Encoding
 import qualified Data.Text.Lazy as Text.Lazy
 import qualified Data.Text.Lazy.Encoding as Lazy.Encoding

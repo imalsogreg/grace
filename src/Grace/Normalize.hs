@@ -20,6 +20,7 @@ import Data.Void (Void)
 import Debug.Trace (trace)
 import Grace.Location (Location)
 import Grace.Infer (typeOf)
+import Grace.Image (Img(..))
 import Grace.Syntax (Builtin(..), Scalar(..), Syntax)
 import Grace.Type (Type(..))
 import qualified Grace.Triton as Triton
@@ -248,6 +249,9 @@ evaluate type_ env syntax =
           where
             left'  = evaluate type_ env left
             right' = evaluate type_ env right
+
+        Syntax.Image{..} ->
+            Value.Image (Img base64Image)
 
         Syntax.Builtin{..} ->
             Value.Builtin builtin
@@ -529,5 +533,7 @@ quote names value =
             Syntax.Tensor { elements = fmap  (quote names) elements, .. }
         Value.TritonCall name ->
           Syntax.Variable { index = 0, .. }
+        Value.Image (Img img) ->
+          Syntax.Image { base64Image = img, .. }
   where
     location = ()

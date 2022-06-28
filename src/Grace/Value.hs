@@ -18,6 +18,7 @@ import Data.Text (Text)
 import Grace.Location (Location)
 import Grace.Syntax (Builtin, Operator, Scalar, Syntax)
 import Grace.Type (Type)
+import Grace.Image (Img)
 
 import qualified Data.Aeson as Aeson
 import qualified Data.HashMap.Strict.InsOrd as HashMap
@@ -98,6 +99,7 @@ data Value
     | Operator Value Operator Value
     | Tensor (Seq Value)
     | TritonCall Text
+    | Image Img
     deriving stock (Eq, Show)
 
 instance IsString Value where
