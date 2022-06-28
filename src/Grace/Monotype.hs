@@ -78,6 +78,11 @@ data Scalar
     --
     -- >>> pretty Text
     -- Text
+    | Image
+    -- ^ Image type
+    --
+    -- >>> Pretty Image
+    -- Image
     deriving stock (Eq, Generic, Lift, Show)
 
 instance Pretty Scalar where
@@ -85,6 +90,7 @@ instance Pretty Scalar where
     pretty Real    = builtin "Real"
     pretty JSON    = builtin "JSON"
     pretty Natural = builtin "Natural"
+    pretty Image   = builtin "Image"
     pretty Integer = builtin "Integer"
     pretty Text    = builtin "Text"
 

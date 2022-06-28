@@ -139,6 +139,7 @@ parseToken =
             , Natural  <$ symbol "Natural"
             , Bool     <$ symbol "Bool"
             , Text     <$ symbol "Text"
+            , Image    <$ symbol "Image"
             ] <?> "built-in type"
 
         , OpenAngle        <$ symbol "<"
@@ -316,6 +317,7 @@ reserved =
         , "Real/negate"
         , "Real/show"
         , "Fields"
+        , "Image"
         , "Integer"
         , "Integer/abs"
         , "Integer/even"
@@ -338,6 +340,8 @@ reserved =
         , "Tensor"
         , "Text"
         , "Text/equal"
+        , "Tensor"
+        , "Tensor/fromList"
         , "Type"
         , "else"
         , "exists"
@@ -444,6 +448,7 @@ data Token
     | File FilePath
     | Forall
     | If
+    | Image
     | In
     | Int Int
     | Integer

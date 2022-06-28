@@ -250,9 +250,6 @@ evaluate type_ env syntax =
             left'  = evaluate type_ env left
             right' = evaluate type_ env right
 
-        Syntax.Image{..} ->
-            Value.Image (Img base64Image)
-
         Syntax.Builtin{..} ->
             Value.Builtin builtin
 
@@ -534,6 +531,6 @@ quote names value =
         Value.TritonCall name ->
           Syntax.Variable { index = 0, .. }
         Value.Image (Img img) ->
-          Syntax.Image { base64Image = img, .. }
+          Syntax.Scalar { scalar = Syntax.Image img, .. } 
   where
     location = ()

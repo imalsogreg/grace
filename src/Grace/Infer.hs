@@ -1561,6 +1561,9 @@ infer e0 = do
         Syntax.Scalar{ scalar = Syntax.Text _, .. } -> do
             return Type.Scalar{ scalar = Monotype.Text, .. }
 
+        Syntax.Scalar{ scalar = Syntax.Image _, .. } -> do
+            return Type.Scalar{ scalar = Monotype.Image, .. }
+
         Syntax.Scalar{ scalar = Syntax.Null, .. } -> do
             -- NOTE: You might think that you could just infer that `null`
             -- has type `forall (a : Type) . Optional a`.  This does not work

@@ -173,6 +173,7 @@ render t = case t of
     Lexer.If               -> "if"
     Lexer.In               -> "in"
     Lexer.Int _            -> "an integer literal"
+    Lexer.Image            -> "Image"
     Lexer.Integer          -> "Integer"
     Lexer.IntegerAbs       -> "Integer/clamp"
     Lexer.IntegerEven      -> "Integer/even"
@@ -479,6 +480,10 @@ grammar = mdo
 
                 return Syntax.Builtin{ builtin = Syntax.TensorFromList, .. }
 
+        <|> do  location <- locatedToken Lexer.Image
+                (_,t) <- locatedText
+                return Syntax.Scalar { scalar = Syntax.Image t, .. }
+
         <|> do  ~(location, t) <- locatedText
 
                 return Syntax.Scalar{ scalar = Syntax.Text t, .. }
@@ -604,6 +609,8 @@ grammar = mdo
                 return Type.Scalar{ scalar = Monotype.JSON, .. }
         <|> do  location <- locatedToken Lexer.Natural
                 return Type.Scalar{ scalar = Monotype.Natural, .. }
+        <|> do  location <- locatedToken Lexer.Image
+                return Type.Scalar { scalar = Monotype.Image, .. }
         <|> do  location <- locatedToken Lexer.Text
                 return Type.Scalar{ scalar = Monotype.Text, .. }
         <|> do  ~(location, name) <- locatedLabel

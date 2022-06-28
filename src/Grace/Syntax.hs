@@ -115,7 +115,6 @@ data Syntax s a
     | Embed { location :: s, embedded :: a }
     | Tensor { location :: s, elements :: Seq (Syntax s a) } -- TODO Should this be an Array, not Seq?
     | TritonCall { location :: s, modelName :: Text }
-    | Image { location :: s, base64Image :: Text }
     deriving stock (Eq, Foldable, Functor, Generic, Lift, Show, Traversable)
 
 instance Plated (Syntax s a) where
@@ -178,8 +177,6 @@ instance Plated (Syntax s a) where
                 return Tensor{ elements = newElements, .. }
             TritonCall {..} -> do
               pure TritonCall{..}
-            Image {..} -> do
-              pure Image{..}
 
 instance Bifunctor Syntax where
     first f Variable{..} =
@@ -218,8 +215,6 @@ instance Bifunctor Syntax where
         Tensor{ location = f location, elements = fmap (first f) elements, .. }
     first f TritonCall{..} =
         TritonCall { location = f location, .. }
-    first f Image{..} =
-        Image { location = f location, .. }
 
     second = fmap
 
@@ -254,6 +249,10 @@ data Scalar
     --   true
     --   >>> pretty (Bool False)
     --   false
+    | Image Text
+    -- ^
+    --   >>> pretty (Image "a")
+    --   Image "a"
     | Null
     -- ^
     --   >>> pretty Null
@@ -267,6 +266,7 @@ instance Pretty Scalar where
     pretty (Integer number) = Pretty.scalar (pretty number)
     pretty (Natural number) = Pretty.scalar (pretty number)
     pretty (Text text)      = Pretty.scalar (Type.prettyTextLiteral text)
+    pretty (Image img)      = Pretty.scalar ("Image " <> Type.prettyTextLiteral img)
     pretty  Null            = Pretty.scalar "null"
 
 -- | A binary infix operator
