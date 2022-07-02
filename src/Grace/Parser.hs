@@ -196,6 +196,7 @@ render t = case t of
     Lexer.ListMap          -> "List/map"
     Lexer.ListReverse      -> "List/reverse"
     Lexer.ListTake         -> "List/take"
+    Lexer.ListZipWith      -> "List/zipWith"
     Lexer.Merge            -> "merge"
     Lexer.Natural          -> "Natural"
     Lexer.NaturalFold      -> "Natural/fold"
@@ -209,6 +210,7 @@ render t = case t of
     Lexer.Plus             -> "+"
     Lexer.Tensor           -> "Tensor"
     Lexer.TensorFromList   -> "Tensor/fromList"
+    Lexer.TensorToList     -> "Tensor/toList"
     Lexer.Text             -> "Text"
     Lexer.TextEqual        -> "Text/equal"
     Lexer.TextLiteral _    -> "a text literal"
@@ -329,16 +331,6 @@ grammar = mdo
 
                 return Syntax.List{ elements = Seq.fromList elements, .. }
 
-        -- <|> ((\location shapeElements elements ->
-        --         if (foldl' (*) 1 shapeElements :: Int) == (length elements:: Int) 
-        --         then Just (Syntax.Tensor { elements = Seq.fromList elements, ..})
-        --         else Nothing
-        --      )
-        --      <$> locatedToken Lexer.Tensor
-        --      <*> (int `sepBy` token Lexer.Comma)
-        --      <*> (expression `sepBy` token Lexer.Comma)
-        --     )
-        --    )
 
         <|> ((\location elements -> Syntax.Tensor { .. }
              )
@@ -449,6 +441,10 @@ grammar = mdo
 
                 return Syntax.Builtin{ builtin = Syntax.ListTake, .. }
 
+        <|> do  location <- locatedToken Lexer.ListZipWith
+
+                return Syntax.Builtin{ builtin = Syntax.ListZipWith, .. }
+
         <|> do  location <- locatedToken Lexer.ImageToTensor
                 token Lexer.At
                 token Lexer.OpenBracket
@@ -487,6 +483,10 @@ grammar = mdo
         <|> do  location <- locatedToken Lexer.TensorFromList
 
                 return Syntax.Builtin{ builtin = Syntax.TensorFromList, .. }
+
+        <|> do  location <- locatedToken Lexer.TensorToList
+
+                return Syntax.Builtin{ builtin = Syntax.TensorToList, .. }
 
         <|> do  location <- locatedToken Lexer.Image
                 (_,t) <- locatedText

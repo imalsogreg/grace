@@ -354,6 +354,7 @@ data Builtin
     -- ^
     --   >>> pretty ListTake
     --   List/take
+    | ListZipWith
     | ImageToTensor Monotype.TensorShape
     -- ^
     --   >>> pretty ImageToTensor
@@ -387,6 +388,7 @@ data Builtin
     --   >>> pretty TextEqual
     --   Text/equal
     | TensorFromList
+    | TensorToList
     deriving (Eq, Generic, Lift, Show)
 
 instance Pretty Builtin where
@@ -410,9 +412,11 @@ instance Pretty Builtin where
     pretty ListMap        = Pretty.builtin "List/map"
     pretty ListReverse    = Pretty.builtin "List/reverse"
     pretty ListTake       = Pretty.builtin "List/take"
+    pretty ListZipWith    = Pretty.builtin "List/zipWith"
     pretty NaturalFold    = Pretty.builtin "Natural/fold"
     pretty TextEqual      = Pretty.builtin "Text/equal"
     pretty TensorFromList = Pretty.builtin "Tensor/fromList"
+    pretty TensorToList   = Pretty.builtin "Tensor/toList"
 
 -- | Pretty-print an expression
 prettyExpression :: Pretty a => Syntax s a -> Doc AnsiStyle

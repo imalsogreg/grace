@@ -9,7 +9,7 @@ import qualified Data.List as List
 import Data.Text (Text)
 import qualified Control.Lens as Lens
 import qualified Data.Text.Encoding as Text
-import Debug.Trace (trace, traceShowId, traceShow)
+-- import Debug.Trace (trace, traceShowId, traceShow)
 import qualified Codec.Picture as Juicy
 import qualified Codec.Picture.Extra as Juicy
 import qualified Data.ByteString.Base64 as Base64
@@ -31,9 +31,9 @@ imageToTensor (Img {base64Image}) [1,nChans,nRows,nCols] = do
         else Juicy.scaleBilinear nCols nRows image
   let
     pixelValues :: Juicy.PixelRGB8 -> [Float]
-    pixelValues p@(Juicy.PixelRGB8 r g b) = case nChans of
+    pixelValues (Juicy.PixelRGB8 r g b) = case nChans of
       1 -> let
-        v = traceShow p (realToFrac r + realToFrac g + realToFrac b) / 255.0 / 3.0 in [v]
+        v = (realToFrac r + realToFrac g + realToFrac b) / 255.0 / 3.0 in [v]
       3 ->
         let
           r' = realToFrac r / 255.0
@@ -41,7 +41,7 @@ imageToTensor (Img {base64Image}) [1,nChans,nRows,nCols] = do
           b' = realToFrac b / 255.0
         in [ r', g', b' ]
       _ -> error "TODO: HACK: Only 1 channel or 3 channel images supported."
-    pixelList = fmap pixelValues $ traceShowId $ Lens.toListOf Juicy.imagePixels (scaledImage)
+    pixelList = fmap pixelValues $ Lens.toListOf Juicy.imagePixels (scaledImage)
     channelMajor = List.transpose pixelList
 
   pure $ List.concat channelMajor

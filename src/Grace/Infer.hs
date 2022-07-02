@@ -1873,6 +1873,29 @@ infer e0 = do
                 , ..
                 }
 
+        Syntax.Builtin{ builtin = Syntax.ListZipWith, .. } -> do
+            return Type.Forall
+                { nameLocation = Syntax.location e0
+                , name = "a"
+                , domain = Domain.Type
+                , type_ =
+                  Type.Forall
+                  { nameLocation = Syntax.location e0
+                  , name = "b"
+                  , domain = Domain.Type
+                  , type_ = Type.Forall
+                    { nameLocation = Syntax.location e0
+                    , name = "c"
+                    , domain = Domain.Type
+                    , type_ = (var "a" ~> (var "b" ~> var "c")) ~>
+                               (Type.List{ type_ = var "a", .. } ~> ( Type.List {type_ = var "b", ..} ~> Type.List {type_ = var "c", ..}))
+                    , ..
+                    }
+                  , ..
+                  }
+                , ..
+                }
+
         Syntax.Builtin{ builtin = Syntax.JSONFold, .. } -> do
             return Type.Forall
                 { nameLocation = Syntax.location e0
@@ -1947,19 +1970,31 @@ infer e0 = do
                                 , domain = Domain.Type
                                 , type_ = Type.List { type_ = var "a", .. }
                                   ~>
-                                  -- Type.Optional {
-                                  --       type_ = Type.Tensor {
-                                  --         type_ = var "a",
-                                  --         shape = var "shape",
-                                  --         ..
-                                  --       }, ..
-                                  --  }
                                    Type.Tensor { type_ = var "a", shape = var "shape", .. }
                                 , ..
                                 }
                 , ..
                 }
-
+        Syntax.Builtin{ builtin = Syntax.TensorToList, .. } -> do
+          return
+              Type.Forall
+                { nameLocation = Syntax.location e0
+                , name = "shape"
+                , domain = Domain.Type
+                , type_ =
+                  
+                        Type.Forall
+                                { nameLocation = Syntax.location e0
+                                , name = "a"
+                                , domain = Domain.Type
+                                , type_ = Type.Tensor { type_ = var "a", shape = var "shape", .. }
+                                          ~>
+                                          Type.List { type_ = var "a", .. }
+                                   
+                                , ..
+                                }
+                , ..
+                }
 
         Syntax.Embed{ embedded = (type_, _) } -> do
             return type_

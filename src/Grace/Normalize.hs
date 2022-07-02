@@ -256,8 +256,14 @@ evaluate type_ env syntax =
         Syntax.Embed{ embedded = (_, value) } ->
             value
 
-        Syntax.Tensor{..} -> trace "Evaluate Syntax.Tensor" $
-            Value.Tensor (fmap (evaluate type_ env) elements)
+        Syntax.Tensor{..} ->
+          let
+            normalizeElements xs = concatMap normalizeElement xs
+            normalizeElement x = case x of
+              Syntax.Scalar {} -> [evaluate type_ env x]
+              Syntax.List { elements = xs } -> normalizeElements xs
+          in
+            Value.Tensor (Seq.fromList $ normalizeElements elements)
 
         Syntax.TritonCall{..} -> Value.TritonCall modelName
 
@@ -290,6 +296,8 @@ apply (Value.Builtin ListLast) (Value.List (_ :|> x)) _ =
     Value.Application (Value.Alternative "Some") x
 apply (Value.Builtin ListReverse) (Value.List xs) _ =
     Value.List (Seq.reverse xs)
+apply (Value.Application (Value.Application (Value.Builtin ListZipWith) f) (Value.List elemsA)) (Value.List elemsB) type_ =
+    Value.List (Seq.zipWith (\a b -> apply (apply f a type_) b type_) elemsA elemsB)
 apply (Value.TritonCall modelName) tensor@(Value.Tensor _) _ =
     unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensor
 apply
@@ -395,6 +403,8 @@ apply (Value.Builtin TensorFromList) (Value.List xs) type_ =
         then Value.Tensor xs
         else error "Dimension mismatch"
     _ -> error $ "Impossible case, application does not results in not a tensor: " <> Text.unpack (renderStrict True 50 type_)
+apply (Value.Builtin TensorToList) (Value.Tensor xs) _ =
+  Value.List xs
 apply
     (Value.Application (Value.Builtin TextEqual) (Value.Scalar (Text l)))
     (Value.Scalar (Text r)) _ =

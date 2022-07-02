@@ -116,6 +116,7 @@ parseToken =
             , ListMap        <$ symbol "List/map"
             , ListReverse    <$ symbol "List/reverse"
             , ListTake       <$ symbol "List/take"
+            , ListZipWith    <$ symbol "List/zipWith"
             , ImageToTensor  <$ symbol "Image/toTensor" -- TODO: variants for pixel-major instead of channel-major
             , IntegerAbs     <$ symbol "Integer/abs"
             , IntegerEven    <$ symbol "Integer/even"
@@ -125,6 +126,7 @@ parseToken =
             , NaturalFold    <$ symbol "Natural/fold"
             , TextEqual      <$ symbol "Text/equal"
             , TensorFromList <$ symbol "Tensor/fromList"
+            , TensorToList <$ symbol "Tensor/toList"
             , False_         <$ symbol "false"
             , True_          <$ symbol "true"
             , Null           <$ symbol "null"
@@ -475,6 +477,7 @@ data Token
     | ListMap
     | ListReverse
     | ListTake
+    | ListZipWith
     | Merge
     | Natural
     | NaturalFold
@@ -488,6 +491,7 @@ data Token
     | Plus
     | Tensor
     | TensorFromList
+    | TensorToList
     | Text
     | TextEqual
     | TextLiteral Text

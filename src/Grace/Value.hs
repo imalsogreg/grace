@@ -18,7 +18,6 @@ import Data.Text (Text)
 import Grace.Location (Location)
 import Grace.Syntax (Builtin, Operator, Scalar, Syntax)
 import Grace.Type (Type)
-import Grace.Image (Img)
 
 import qualified Data.Aeson as Aeson
 import qualified Data.HashMap.Strict.InsOrd as HashMap
