@@ -116,6 +116,7 @@ parseToken =
             , ListMap        <$ symbol "List/map"
             , ListReverse    <$ symbol "List/reverse"
             , ListTake       <$ symbol "List/take"
+            , ImageToTensor  <$ symbol "Image/toTensor" -- TODO: variants for pixel-major instead of channel-major
             , IntegerAbs     <$ symbol "Integer/abs"
             , IntegerEven    <$ symbol "Integer/even"
             , IntegerNegate  <$ symbol "Integer/negate"
@@ -319,6 +320,7 @@ reserved =
         , "Fields"
         , "Image"
         , "Integer"
+        , "Image/toTensor"
         , "Integer/abs"
         , "Integer/even"
         , "Integer/negate"
@@ -449,6 +451,7 @@ data Token
     | Forall
     | If
     | Image
+    | ImageToTensor
     | In
     | Int Int
     | Integer

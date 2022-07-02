@@ -174,6 +174,7 @@ render t = case t of
     Lexer.In               -> "in"
     Lexer.Int _            -> "an integer literal"
     Lexer.Image            -> "Image"
+    Lexer.ImageToTensor    -> "Image/toTensor"
     Lexer.Integer          -> "Integer"
     Lexer.IntegerAbs       -> "Integer/clamp"
     Lexer.IntegerEven      -> "Integer/even"
@@ -447,6 +448,13 @@ grammar = mdo
         <|> do  location <- locatedToken Lexer.ListTake
 
                 return Syntax.Builtin{ builtin = Syntax.ListTake, .. }
+
+        <|> do  location <- locatedToken Lexer.ImageToTensor
+                token Lexer.At
+                token Lexer.OpenBracket
+                shapeElements <- int `sepBy` token Lexer.Comma
+                token Lexer.CloseBracket
+                return Syntax.Builtin{ builtin = Syntax.ImageToTensor (Monotype.TensorShape shapeElements), .. }
 
         <|> do  location <- locatedToken Lexer.IntegerAbs
 

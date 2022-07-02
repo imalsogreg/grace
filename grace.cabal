@@ -64,11 +64,13 @@ library
   else
     hs-source-dirs:    ghc
     build-depends:     ansi-terminal
+                     , base64-bytestring
                      , haskeline
                      , http-client
                      , http-client-tls
                      , http-types
                      , JuicyPixels
+                     , JuicyPixels-extra
                      , optparse-applicative
                      , repline
                      , terminal-size

@@ -99,7 +99,6 @@ data Value
     | Operator Value Operator Value
     | Tensor (Seq Value)
     | TritonCall Text
-    | Image Img
     deriving stock (Eq, Show)
 
 instance IsString Value where

@@ -293,7 +293,7 @@ main = do
 
                     render (Grace.Pretty.pretty annotated <> Pretty.hardline)
 
-            let builtins = [ minBound .. maxBound ]
+            let builtins = [] -- [ minBound .. maxBound ] -- TODO we lost this because of Syntax.ImageToTensor
 
             case builtins of
                 [] -> do

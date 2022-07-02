@@ -17,10 +17,10 @@ import Data.Scientific (Scientific)
 import Data.Sequence (Seq(..), ViewL(..))
 import Data.Text (Text)
 import Data.Void (Void)
-import Debug.Trace (trace)
+import Debug.Trace (trace, traceShowId)
 import Grace.Location (Location)
 import Grace.Infer (typeOf)
-import Grace.Image (Img(..))
+import Grace.Image (Img(..), imageToTensor)
 import Grace.Syntax (Builtin(..), Scalar(..), Syntax)
 import Grace.Type (Type(..))
 import qualified Grace.Triton as Triton
@@ -324,6 +324,12 @@ apply
         case Seq.viewl xs of
             EmptyL  -> result
             y :< ys -> loop ys (apply (apply cons y type_) result type_) -- TODO: I'm not sure if type_ is right here.
+apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.Image imageBytes)) resultType =
+  case imageToTensor (Img imageBytes) shape of
+    Left err -> error err
+    Right elements -> let
+      tensorElements = (\v -> Value.Scalar (Syntax.Real $ realToFrac v)) <$> elements
+      in Value.Tensor (Seq.fromList tensorElements)
 apply (Value.Builtin ListIndexed) (Value.List elements) _ =
     Value.List (Seq.mapWithIndex adapt elements)
   where
@@ -530,7 +536,5 @@ quote names value =
             Syntax.Tensor { elements = fmap  (quote names) elements, .. }
         Value.TritonCall name ->
           Syntax.Variable { index = 0, .. }
-        Value.Image (Img img) ->
-          Syntax.Scalar { scalar = Syntax.Image img, .. } 
   where
     location = ()

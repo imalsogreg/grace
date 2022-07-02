@@ -33,6 +33,7 @@ import Data.String.Interpolate ()  -- For an orphan instance for Lift (Seq a)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Grace.Pretty (Pretty(..), keyword, label, punctuation)
+import qualified Grace.Monotype as Monotype
 import Grace.Type (Type)
 import Language.Haskell.TH.Syntax (Lift)
 import Numeric.Natural (Natural)
@@ -353,6 +354,10 @@ data Builtin
     -- ^
     --   >>> pretty ListTake
     --   List/take
+    | ImageToTensor Monotype.TensorShape
+    -- ^
+    --   >>> pretty ImageToTensor
+    --   Image/toTensor
     | IntegerEven
     -- ^
     --   >>> pretty IntegerEven
@@ -382,13 +387,14 @@ data Builtin
     --   >>> pretty TextEqual
     --   Text/equal
     | TensorFromList
-    deriving (Bounded, Enum, Eq, Generic, Lift, Show)
+    deriving (Eq, Generic, Lift, Show)
 
 instance Pretty Builtin where
     pretty RealEqual      = Pretty.builtin "Real/equal"
     pretty RealLessThan   = Pretty.builtin "Real/lessThan"
     pretty RealNegate     = Pretty.builtin "Real/negate"
     pretty RealShow       = Pretty.builtin "Real/show"
+    pretty (ImageToTensor shape)  = Pretty.builtin "Image/toTensor @" <> pretty shape
     pretty IntegerAbs     = Pretty.builtin "Integer/abs"
     pretty IntegerEven    = Pretty.builtin "Integer/even"
     pretty IntegerNegate  = Pretty.builtin "Integer/negate"
