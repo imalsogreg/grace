@@ -17,6 +17,7 @@ import Data.Scientific (Scientific)
 import Data.Sequence (Seq(..), ViewL(..))
 import Data.Text (Text)
 import Data.Void (Void)
+import Data.Foldable (toList)
 import Debug.Trace (trace, traceShowId)
 import Grace.Location (Location)
 import Grace.Infer (typeOf)
@@ -296,6 +297,15 @@ apply (Value.Builtin ListLast) (Value.List (_ :|> x)) _ =
     Value.Application (Value.Alternative "Some") x
 apply (Value.Builtin ListReverse) (Value.List xs) _ =
     Value.List (Seq.reverse xs)
+apply ((Value.Application (Value.Builtin ListTopNLabels) (Value.Scalar (Natural n)))) (Value.List elems) type_ =
+    let
+      get_value (Value.Record fields) = case HashMap.lookup "value" fields of
+        Just (Value.Scalar (Real v)) -> v
+        Just (Value.Scalar (Natural v)) -> realToFrac v
+        e -> error ("Expected Scalar Real, found " <> show e)
+      get_value e = error ("get_value called on invalid value " <> show e)
+      sorted_elems = List.sortBy (\elemA  elemB -> compare (get_value elemB) (get_value elemA)) $ toList elems
+    in Value.List (Seq.fromList (List.take (fromIntegral $ toInteger n) sorted_elems))
 apply (Value.Application (Value.Application (Value.Builtin ListZipWith) f) (Value.List elemsA)) (Value.List elemsB) type_ =
     Value.List (Seq.zipWith (\a b -> apply (apply f a type_) b type_) elemsA elemsB)
 apply (Value.TritonCall modelName) tensor@(Value.Tensor _) _ =

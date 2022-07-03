@@ -196,6 +196,7 @@ render t = case t of
     Lexer.ListMap          -> "List/map"
     Lexer.ListReverse      -> "List/reverse"
     Lexer.ListTake         -> "List/take"
+    Lexer.ListTopNLabels   -> "List/topNLabels"
     Lexer.ListZipWith      -> "List/zipWith"
     Lexer.Merge            -> "merge"
     Lexer.Natural          -> "Natural"
@@ -440,6 +441,10 @@ grammar = mdo
         <|> do  location <- locatedToken Lexer.ListTake
 
                 return Syntax.Builtin{ builtin = Syntax.ListTake, .. }
+
+        <|> do  location <- locatedToken Lexer.ListTopNLabels
+
+                return Syntax.Builtin{ builtin = Syntax.ListTopNLabels, .. }
 
         <|> do  location <- locatedToken Lexer.ListZipWith
 

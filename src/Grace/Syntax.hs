@@ -354,6 +354,7 @@ data Builtin
     -- ^
     --   >>> pretty ListTake
     --   List/take
+    | ListTopNLabels
     | ListZipWith
     | ImageToTensor Monotype.TensorShape
     -- ^
@@ -412,6 +413,7 @@ instance Pretty Builtin where
     pretty ListMap        = Pretty.builtin "List/map"
     pretty ListReverse    = Pretty.builtin "List/reverse"
     pretty ListTake       = Pretty.builtin "List/take"
+    pretty ListTopNLabels = Pretty.builtin "List/topNLabels"
     pretty ListZipWith    = Pretty.builtin "List/zipWith"
     pretty NaturalFold    = Pretty.builtin "Natural/fold"
     pretty TextEqual      = Pretty.builtin "Text/equal"

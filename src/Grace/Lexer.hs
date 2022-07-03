@@ -116,6 +116,7 @@ parseToken =
             , ListMap        <$ symbol "List/map"
             , ListReverse    <$ symbol "List/reverse"
             , ListTake       <$ symbol "List/take"
+            , ListTopNLabels <$ symbol "List/topNLabels"
             , ListZipWith    <$ symbol "List/zipWith"
             , ImageToTensor  <$ symbol "Image/toTensor" -- TODO: variants for pixel-major instead of channel-major
             , IntegerAbs     <$ symbol "Integer/abs"
@@ -477,6 +478,7 @@ data Token
     | ListMap
     | ListReverse
     | ListTake
+    | ListTopNLabels
     | ListZipWith
     | Merge
     | Natural

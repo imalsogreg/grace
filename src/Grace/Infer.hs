@@ -1873,6 +1873,17 @@ infer e0 = do
                 , ..
                 }
 
+        Syntax.Builtin{ builtin = Syntax.ListTopNLabels, .. } -> do
+            let type_ = Type.Record {
+                  fields = Type.Fields
+                    [ ("label", Type.Scalar { scalar = Monotype.Text, .. })
+                    , ("value", Type.Scalar { scalar = Monotype.Real, .. })
+                    ] Monotype.EmptyFields
+                  , ..
+                }
+            return $ Type.Scalar { scalar = Monotype.Natural, .. } ~>
+              (Type.List {..} ~> Type.List {..})
+
         Syntax.Builtin{ builtin = Syntax.ListZipWith, .. } -> do
             return Type.Forall
                 { nameLocation = Syntax.location e0
