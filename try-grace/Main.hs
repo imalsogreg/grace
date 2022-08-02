@@ -43,6 +43,7 @@ import qualified Data.HashMap.Strict.InsOrd as HashMap
 import qualified Data.IntMap as IntMap
 import qualified Data.IORef as IORef
 import qualified Data.JSString as JSString
+import qualified Data.JSString.Text as JSString
 import qualified Data.Scientific as Scientific
 import qualified Data.Sequence as Seq
 import qualified Data.Text as Text
@@ -53,6 +54,7 @@ import qualified Grace.Interpret as Interpret
 import qualified Grace.Monotype as Monotype
 import qualified Grace.Normalize as Normalize
 import qualified Grace.Pretty as Pretty
+import qualified Grace.Syntax as Syntax
 import qualified Grace.Type as Type
 import qualified Grace.FileWidget as FileWidget
 import qualified Grace.Value as Value
@@ -551,8 +553,8 @@ renderInput _ Type.Scalar { scalar = Monotype.Image } = do
                                            -- This invariant comes from core Grace Image monotype.
   
   let get = do
-        imgBytes <- FileWidget.toImageValue input
-        return (Value.Scalar imgBytes)
+        imgBytes <- toImageValue input
+        return (Value.Scalar (Syntax.Text imgBytes))
 
   return (input, get)
 
@@ -1220,7 +1222,7 @@ conclusionExample =
     \    else \"Have fun using the Grace browser!\""
 
 foreign import javascript unsafe "window.URL.createObjectUrl($1)"
-    createObjectUrl_ :: JSVal -> IO JSVal
+    createObjectUrl_ :: JSString -> IO JSVal
 
 -- TODO: Find the right imports and implement this.
 -- createObjetUrl :: MonadIO io => File -> IO ObjectURL
@@ -1235,8 +1237,8 @@ toImageValue fileInput = do
   -- set img src to the data url
   -- To be continued.
   img <- createElement "img"
-  url <- fmap createObjectUrl_ =<< toValue fileInput
-  setAttribute img "src" url
+  url <- createObjectUrl_  . JSString.textToJSString =<< toValue fileInput
+  setAttribute img "src" (JSString.textFromJSVal url)
 
   return ""
   

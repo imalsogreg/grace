@@ -358,8 +358,8 @@ data Builtin
     | ListZipWith
     | ImageToTensor Monotype.TensorShape
     -- ^
-    --   >>> pretty ImageToTensor
-    --   Image/toTensor
+    --   >>> pretty (ImageToTensor (Monotype.TensorShape [1,3,28,28]))
+    --   Image/toTensor @[1, 3, 28, 28]
     | IntegerEven
     -- ^
     --   >>> pretty IntegerEven

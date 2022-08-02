@@ -81,7 +81,7 @@ data Scalar
     | Image
     -- ^ Image type
     --
-    -- >>> Pretty Image
+    -- >>> pretty Image
     -- Image
     deriving stock (Eq, Generic, Lift, Show)
 

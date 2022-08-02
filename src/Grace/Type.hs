@@ -121,8 +121,8 @@ data Type s
     | Shape { location :: s, tensorShape :: Monotype.TensorShape }
     -- ^ Shape type for specifying a Tensor's shape
     --
-    -- >>> pretty @(Type ()) (Shape () (Monotype.TensorShape [1,2]))
-    -- [1,2]
+    -- >>> pretty @(Type ()) (Shape () (Monotype.TensorShape [1, 2]))
+    -- [1, 2]
     | Tensor { location :: s, shape :: Type s, type_ :: Type s }
     deriving stock (Eq, Functor, Generic, Lift, Show)
 
