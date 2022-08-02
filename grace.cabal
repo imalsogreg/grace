@@ -33,6 +33,7 @@ library
 
   exposed-modules:     Grace.Context
                      , Grace.Domain
+                     , Grace.FileWidget
                      , Grace.Existential
                      , Grace.Image
                      , Grace.Input

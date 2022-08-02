@@ -54,6 +54,7 @@ import qualified Grace.Monotype as Monotype
 import qualified Grace.Normalize as Normalize
 import qualified Grace.Pretty as Pretty
 import qualified Grace.Type as Type
+import qualified Grace.FileWidget as FileWidget
 import qualified Grace.Value as Value
 import qualified JavaScript.Array as Array
 import qualified Network.URI.Encode as URI.Encode
@@ -541,6 +542,19 @@ renderInput _ Type.Scalar{ scalar = Monotype.Natural } = do
             return (Value.Scalar (Natural (fromInteger integer)))
 
     return (input, get)
+
+renderInput _ Type.Scalar { scalar = Monotype.Image } = do
+  input <- createElement "input"
+
+  setAttribute input "type" "file"
+  setAttribute input "accept" ".jpeg,.jpg" -- TODO: For now, only accept jpeg images.
+                                           -- This invariant comes from core Grace Image monotype.
+  
+  let get = do
+        imgBytes <- FileWidget.toImageValue input
+        return (Value.Scalar imgBytes)
+
+  return (input, get)
 
 renderInput _ Type.Scalar{ scalar = Monotype.JSON } = do
     input <- createElement "input"
@@ -1204,3 +1218,25 @@ conclusionExample =
     \    if input.\"Do you want to build your own language?\"\n\
     \    then \"Fork Grace on GitHub!\"\n\
     \    else \"Have fun using the Grace browser!\""
+
+foreign import javascript unsafe "window.URL.createObjectUrl($1)"
+    createObjectUrl_ :: JSVal -> IO JSVal
+
+-- TODO: Find the right imports and implement this.
+-- createObjetUrl :: MonadIO io => File -> IO ObjectURL
+-- createObjectUrl = undefined
+
+-- Compute the base64 bytestring from the file at the filepath selected
+-- by the given FileInput element.
+toImageValue :: JSVal -> IO Text.Text
+toImageValue fileInput = do
+  -- Create an img
+  -- Create a data URL from input.value
+  -- set img src to the data url
+  -- To be continued.
+  img <- createElement "img"
+  url <- fmap createObjectUrl_ =<< toValue fileInput
+  setAttribute img "src" url
+
+  return ""
+  
