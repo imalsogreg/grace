@@ -11,6 +11,7 @@ import Control.Exception (Exception(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Trans.Maybe (MaybeT)
 import Data.Foldable (toList)
+import qualified Data.Maybe as Maybe
 import Data.IORef (IORef)
 import Data.JSString (JSString)
 import Data.Text (Text)
@@ -29,6 +30,7 @@ import Grace.Value (Value(..))
 import JavaScript.Array (JSArray)
 import Numeric.Natural (Natural)
 import Prelude hiding (div, error, id, span, subtract)
+import qualified Prelude as Prelude
 
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM as STM
@@ -56,7 +58,6 @@ import qualified Grace.Normalize as Normalize
 import qualified Grace.Pretty as Pretty
 import qualified Grace.Syntax as Syntax
 import qualified Grace.Type as Type
-import qualified Grace.FileWidget as FileWidget
 import qualified Grace.Value as Value
 import qualified JavaScript.Array as Array
 import qualified Network.URI.Encode as URI.Encode
@@ -270,6 +271,10 @@ fromText = JSString.pack . Text.unpack
 valueToText :: Value -> Text
 valueToText = Pretty.renderStrict False 80 . Normalize.quote []
 
+typeToText :: Type Location -> Text
+typeToText = Pretty.renderStrict False 80
+
+
 renderValue :: IORef Natural -> JSVal -> Type Location -> Value -> IO ()
 renderValue ref parent Type.Forall{ name, nameLocation, domain = Type, type_ } value = do
     -- If an expression has a polymorphic type, specialize the type to JSON
@@ -324,10 +329,25 @@ renderValue _ parent _ (Value.Scalar Null) = do
 
     replaceChild parent span
 
-renderValue _ parent _ value@Value.Scalar{} = do
+renderValue _ parent _ (Value.Scalar (Syntax.Image imageInner)) = do
+  span <- createElement "span"
+  setTextContent span "Syntax.Image"
+  if imageInner == ""
+  then
+    do
+      span <- createElement "span"
+      setTextContent span "No image selected"
+  else
+    do
+      span <- createElement "span"
+      setTextContent span "TESTING SPAN"
+      img <- createElement "img"
+      setAttribute img "src" imageInner
+
+renderValue _ parent type_ value@Value.Scalar{} = do
     span <- createElement "span"
 
-    setTextContent span (valueToText value)
+    setTextContent span (valueToText value <> " : " <> typeToText type_)
 
     setAttribute span "style" "whitespace: pre"
 
@@ -426,7 +446,9 @@ renderValue ref parent outer (Application (Value.Alternative alternative) value)
     renderValue ref parent recordType recordValue
 
 renderValue ref parent Type.Function{ input, output } function = do
-    result <- Maybe.runMaybeT (renderInput ref input)
+    result <- Maybe.runMaybeT $ do
+      liftIO $ putStrLn "RENDER INPUT"
+      (renderInput ref input)
 
     case result of
         Nothing -> do
@@ -440,6 +462,7 @@ renderValue ref parent Type.Function{ input, output } function = do
                     value <- get
 
                     renderValue ref outputVal output (Normalize.apply function value output)
+                    setInfo ("fn output type: " <> typeToText output)
 
             callback <- Callback.asyncCallback invoke
 
@@ -546,6 +569,8 @@ renderInput _ Type.Scalar{ scalar = Monotype.Natural } = do
     return (input, get)
 
 renderInput _ Type.Scalar { scalar = Monotype.Image } = do
+  liftIO $ putStrLn "renderInput Image"
+  liftIO $ setInfo "renderInput Image"
   input <- createElement "input"
 
   setAttribute input "type" "file"
@@ -554,7 +579,8 @@ renderInput _ Type.Scalar { scalar = Monotype.Image } = do
   
   let get = do
         imgBytes <- toImageValue input
-        return (Value.Scalar (Syntax.Text imgBytes))
+        putStrLn "GET for Image"
+        return (Value.Scalar (Syntax.Image (Maybe.fromMaybe "" imgBytes)))
 
   return (input, get)
 
@@ -582,6 +608,7 @@ renderInput _ Type.Scalar{ scalar = Monotype.JSON } = do
     return (input, get)
 
 renderInput _ Type.Scalar{ scalar = Monotype.Text } = do
+    liftIO $ putStrLn "renderInput Text"
     textarea <- createElement "textarea"
 
     let get = do
@@ -834,12 +861,22 @@ debounce io = do
 
             STM.atomically (TVar.writeTVar tvar (Running async))
 
+-- TODO Get rid of this temporary thing.
+setInfo :: Text -> IO ()
+setInfo msg = do
+  error <- getElementById "info"
+  setTextContent error msg
+
 main :: IO ()
 main = do
+    putStrLn "MAIN"
     input         <- getElementById "input"
     output        <- getElementById "output"
     error         <- getElementById "error"
+    info          <- getElementById "info"
     startTutorial <- getElementById "start-tutorial"
+
+    setInfo "Just playing"
 
     codeInput <- setupCodemirror input
 
@@ -852,6 +889,9 @@ main = do
 
     manager <- HTTP.newManager
     tritonContext <- Triton.loadContext
+
+    span <- createElement "span"
+    setTextContent span "Triton context: "
 
     counter <- IORef.newIORef 0
 
@@ -869,6 +909,9 @@ main = do
 
     let setOutput type_ value = do
             renderValue counter output type_ value
+
+            typeSpan <- createElement "span"
+            setTextContent typeSpan (typeToText type_)
 
             setDisplay error  "none"
             setDisplay output "block"
@@ -1221,24 +1264,25 @@ conclusionExample =
     \    then \"Fork Grace on GitHub!\"\n\
     \    else \"Have fun using the Grace browser!\""
 
-foreign import javascript unsafe "window.URL.createObjectUrl($1)"
-    createObjectUrl_ :: JSString -> IO JSVal
+-- foreign import javascript unsafe "window.URL.createObjectURL($1)"
+--     createObjectUrl_ :: JSString -> IO JSVal
 
--- TODO: Find the right imports and implement this.
--- createObjetUrl :: MonadIO io => File -> IO ObjectURL
--- createObjectUrl = undefined
+foreign import javascript unsafe "URL.createObjectURL($1.files[0])"
+    firstFileObjectUrl_ :: JSVal -> IO JSString
 
--- Compute the base64 bytestring from the file at the filepath selected
--- by the given FileInput element.
-toImageValue :: JSVal -> IO Text.Text
+foreign import javascript unsafe "$1.files.length"
+    fileInputNFiles_ :: JSVal -> IO Int
+
+-- foreign import javascript unsafe "ctx = $1.getContext('2d'); "
+
+
+-- | Get the object URL of the selected file.
+toImageValue :: JSVal -> IO (Maybe Text)
 toImageValue fileInput = do
-  -- Create an img
-  -- Create a data URL from input.value
-  -- set img src to the data url
-  -- To be continued.
-  img <- createElement "img"
-  url <- createObjectUrl_  . JSString.textToJSString =<< toValue fileInput
-  setAttribute img "src" (JSString.textFromJSVal url)
-
-  return ""
-  
+  n <- fileInputNFiles_ fileInput
+  if n > 0
+    then do
+      url <- firstFileObjectUrl_ fileInput
+      return $  Just $ Text.pack $ JSString.unpack url
+    else
+        return Nothing
