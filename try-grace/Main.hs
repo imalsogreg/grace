@@ -62,6 +62,12 @@ import qualified Grace.Value as Value
 import qualified JavaScript.Array as Array
 import qualified Network.URI.Encode as URI.Encode
 
+foreign import javascript unsafe "console.log($1)"
+    consoleLog_ :: JSString -> IO ()
+
+consoleLog :: MonadIO io => Text -> io ()
+consoleLog t = liftIO . consoleLog_ . JSString.pack $ Text.unpack t
+
 foreign import javascript unsafe "document.getElementById($1)"
     getElementById_ :: JSString -> IO JSVal
 
@@ -330,19 +336,26 @@ renderValue _ parent _ (Value.Scalar Null) = do
     replaceChild parent span
 
 renderValue _ parent _ (Value.Scalar (Syntax.Image imageInner)) = do
-  span <- createElement "span"
-  setTextContent span "Syntax.Image"
+  consoleLog "renderValue for IMAGE!"
   if imageInner == ""
   then
     do
+      consoleLog "EMPTY IMAGE"
       span <- createElement "span"
       setTextContent span "No image selected"
+      replaceChild parent span
   else
     do
-      span <- createElement "span"
-      setTextContent span "TESTING SPAN"
+      consoleLog "REAL IMAGE"
       img <- createElement "img"
       setAttribute img "src" imageInner
+      consoleLog "CREATED img element and set src attribute"
+      replaceChild parent img
+
+renderValue _ parent type_ value@Value.Tensor{} = do
+  span <- createElement "span"
+  setTextContent span (typeToText type_)
+  replaceChild parent span
 
 renderValue _ parent type_ value@Value.Scalar{} = do
     span <- createElement "span"
@@ -446,8 +459,10 @@ renderValue ref parent outer (Application (Value.Alternative alternative) value)
     renderValue ref parent recordType recordValue
 
 renderValue ref parent Type.Function{ input, output } function = do
+    consoleLog "RENDER FUNCTION"
     result <- Maybe.runMaybeT $ do
       liftIO $ putStrLn "RENDER INPUT"
+      consoleLog ("about to renderInput for input type: " <> typeToText input)
       (renderInput ref input)
 
     case result of
@@ -461,8 +476,8 @@ renderValue ref parent Type.Function{ input, output } function = do
             let invoke = do
                     value <- get
 
+                    consoleLog ("FUNCTION rendering " <> valueToText value <> " : " <> typeToText output)
                     renderValue ref outputVal output (Normalize.apply function value output)
-                    setInfo ("fn output type: " <> typeToText output)
 
             callback <- Callback.asyncCallback invoke
 
@@ -481,6 +496,7 @@ renderValue _ parent _ value = do
 
 renderDefault :: JSVal -> Value -> IO ()
 renderDefault parent value = do
+    consoleLog "renderDefault"
     code <- createElement "code"
 
     setTextContent code (valueToText value)
@@ -827,7 +843,80 @@ renderInput ref Type.List{ type_ } = do
 
     return (ul, get)
 
+-- TODO factor out the parts common to this and renderInput for Type.List.
+--  This is a copy-paste of the above.
+renderInput ref Type.Tensor{ type_ } = do
+    -- Do a test renderInput to verify that it won't fail later on within the
+    -- async callback
+    _ <- renderInput ref type_
+
+    plus <- createElement "button"
+
+    setAttribute plus "type"  "button"
+    setAttribute plus "class" "btn btn-primary"
+
+    setTextContent plus "+"
+
+    add <- createElement "li"
+
+    replaceChild add plus
+
+    childrenRef <- liftIO (IORef.newIORef IntMap.empty)
+
+    insert <- (liftIO . Callback.asyncCallback) do
+        Just (elementVal, getInner) <- Maybe.runMaybeT (renderInput ref type_)
+        minus <- createElement "button"
+
+        setAttribute minus "type"    "button"
+        setAttribute minus "class"   "btn btn-danger"
+        setAttribute minus "display" "inline"
+
+        setTextContent minus "-"
+
+        span <- createElement "span"
+
+        setTextContent span " "
+
+        li <- createElement "li"
+
+        let adapt m = (IntMap.insert n getInner m, n)
+              where
+                n = case IntMap.lookupMax m of
+                    Nothing -> 0
+                    Just (i, _)  -> i + 1
+
+        n <- IORef.atomicModifyIORef childrenRef adapt
+
+        delete <- Callback.asyncCallback do
+            IORef.atomicModifyIORef childrenRef (\m -> (IntMap.delete n m, ()))
+
+            remove li
+
+        addEventListener minus "click" delete
+
+        replaceChildren li (Array.fromList [ minus, span, elementVal ])
+
+        before add li
+
+    addEventListener plus "click" insert
+
+    ul <- createElement "ul"
+
+    setAttribute ul "class" "list-unstyled"
+
+    replaceChild ul add
+
+    let get = do
+            m <- IORef.readIORef childrenRef
+
+            values <- sequence (IntMap.elems m)
+
+            return (Value.Tensor (Seq.fromList values))
+
+    return (ul, get)
+
 renderInput _ _ = do
+    consoleLog "No method for rendering this type"
     empty
 
 data DebounceStatus = Ready | Lock | Running (Async ())
@@ -870,13 +959,13 @@ setInfo msg = do
 main :: IO ()
 main = do
     putStrLn "MAIN"
+    consoleLog "TESTING CONSOLE.LOG in main"
+    consoleLog "TESTING CONSOLE.LOG in main again"
     input         <- getElementById "input"
     output        <- getElementById "output"
     error         <- getElementById "error"
     info          <- getElementById "info"
     startTutorial <- getElementById "start-tutorial"
-
-    setInfo "Just playing"
 
     codeInput <- setupCodemirror input
 
@@ -908,6 +997,7 @@ main = do
             setDisplay error  "block"
 
     let setOutput type_ value = do
+            consoleLog ("RENDER " <> valueToText value <> " : " <> typeToText type_)
             renderValue counter output type_ value
 
             typeSpan <- createElement "span"

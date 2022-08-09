@@ -553,7 +553,13 @@ quote names value =
             Syntax.Builtin{..}
 
         Value.Tensor elements ->
-            Syntax.Tensor { elements = fmap  (quote names) elements, .. }
+            Syntax.Application
+                { function = Syntax.Builtin { builtin = Syntax.TensorFromList, .. }
+                , argument = Syntax.List
+                  { elements = fmap (quote names) elements, .. }
+                , ..}
+            -- Syntax.Tensor { elements = fmap  (quote names) elements, .. }
+
         Value.TritonCall name ->
           Syntax.Variable { index = 0, .. }
   where

@@ -162,17 +162,20 @@ instance FromJSON TritonTensor where
     data_ <- o .: "data"
     return TritonTensor{..}
 
-data DataType =
-  FP32
+data DataType
+  = FP32
+  | INT64
   deriving (Eq, Show)
 
 instance ToJSON DataType where
   toJSON d = case d of
     FP32 -> toJSON ("FP32" :: String)
+    INT64 -> toJSON ("INT64" :: String)
 
 instance FromJSON DataType where
   parseJSON = withText  "DataType"$ \(txt :: Text) -> case txt of
     "FP32" -> pure FP32
+    "INT64" -> pure INT64
     _ -> fail ("Invalid DataType: " <> unpack txt)
 
 -- * Model Reflection (TOOD)
