@@ -890,7 +890,7 @@ instantiateTypeL a _A0 = do
             set (_ΓR <> (Context.SolvedType a (Monotype.Tensor (Monotype.UnsolvedType a1) (Monotype.UnsolvedType a2)) : Context.UnsolvedType a1 : Context.UnsolvedType a2 : _ΓL))
 
             instantiateTypeL a1 shape
-            instantiateTypeL a1 type_
+            instantiateTypeL a2 type_
 
         -- This is still the same one-layer-at-a-time principle, with a small
         -- twist.  In order to solve:
@@ -1020,7 +1020,7 @@ instantiateTypeR _A0 a = do
             set (_ΓR <> (Context.SolvedType a (Monotype.Tensor (Monotype.UnsolvedType a1) (Monotype.UnsolvedType a2)) : Context.UnsolvedType a1 : Context.UnsolvedType a2 : _ΓL))
 
             instantiateTypeR shape a1
-            instantiateTypeR type_ a1
+            instantiateTypeR type_ a2
             
         Type.Record{..}  -> do
             let _ΓL = _Γ
