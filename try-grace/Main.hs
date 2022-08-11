@@ -585,17 +585,19 @@ renderInput _ Type.Scalar{ scalar = Monotype.Natural } = do
     return (input, get)
 
 renderInput _ Type.Scalar { scalar = Monotype.Image } = do
-  liftIO $ putStrLn "renderInput Image"
-  liftIO $ setInfo "renderInput Image"
+  -- consoleLog "renderInput for Image"
   input <- createElement "input"
 
+  -- consoleLog "about to setAttribute for input"
   setAttribute input "type" "file"
   setAttribute input "accept" ".jpeg,.jpg" -- TODO: For now, only accept jpeg images.
                                            -- This invariant comes from core Grace Image monotype.
+  -- consoleLog "finished setAttribute for input"
   
   let get = do
+        -- consoleLog "get for Image input"
         imgBytes <- toImageValue input
-        putStrLn "GET for Image"
+        -- consoleLog "finished toImageValue"
         return (Value.Scalar (Syntax.Image (Maybe.fromMaybe "" imgBytes)))
 
   return (input, get)
