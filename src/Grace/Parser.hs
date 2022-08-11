@@ -469,6 +469,13 @@ grammar = mdo
                 token Lexer.CloseBracket
                 return Syntax.Builtin{ builtin = Syntax.ImageToTensor (Monotype.TensorShape shapeElements), .. }
 
+        <|> do  location <- locatedToken Lexer.ImageFromTensor
+                token Lexer.At
+                token Lexer.OpenBracket
+                shapeElements <- int' `sepBy` token Lexer.Comma
+                token Lexer.CloseBracket
+                return Syntax.Builtin{ builtin = Syntax.ImageFromTensor (Monotype.TensorShape shapeElements), .. }
+
         <|> do  location <- locatedToken Lexer.IntegerAbs
 
                 return Syntax.Builtin{ builtin = Syntax.IntegerAbs, .. }

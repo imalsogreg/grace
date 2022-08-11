@@ -119,6 +119,7 @@ parseToken =
             , ListTopNLabels <$ symbol "List/topNLabels"
             , ListZipWith    <$ symbol "List/zipWith"
             , ImageToTensor  <$ symbol "Image/toTensor" -- TODO: variants for pixel-major instead of channel-major
+            , ImageFromTensor <$ symbol "Image/fromTensor" -- TODO: variants for pixel-major instead of channel-major
             , IntegerAbs     <$ symbol "Integer/abs"
             , IntegerEven    <$ symbol "Integer/even"
             , IntegerNegate  <$ symbol "Integer/negate"
@@ -455,6 +456,7 @@ data Token
     | If
     | Image
     | ImageToTensor
+    | ImageFromTensor
     | In
     | Int Int
     | Integer
