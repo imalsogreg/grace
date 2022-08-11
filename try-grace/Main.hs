@@ -913,6 +913,8 @@ renderInput ref Type.Tensor{ type_ } = do
 
             values <- sequence (IntMap.elems m)
 
+            Monad.when (null values) $ Prelude.error "No values"
+
             return (Value.Tensor (Seq.fromList values))
 
     return (ul, get)

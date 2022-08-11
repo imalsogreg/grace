@@ -38,6 +38,9 @@ consoleLog t = liftIO . consoleLog_ . JSString.pack $ Text.unpack t
 foreign import javascript unsafe "$r = new Array(); for (r = 0; r < $1; r++) { for (c = 0; c < $2; c++) { i = c*4 + r * $1 * 4; red = ($3.data)[i]; green = ($3.data)[i+1]; blue = ($3.data)[i+2]; color_sum = red + green + blue; avg = color_sum * 0.001307; ($r).push(avg)};  }"
     imageDataToMonochromeTensor_ :: Int -> Int -> JSVal -> IO JSVal
 
+foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r < $1.height; r++) { for (c = 0; c < w; c++) { i = c*4 + r * w * 4; d = $1.data; ($r).push(d[i]); ($r).push(d[i+1]); ($r).push(d[i+2]) }  };"
+    imageDataToPixelMajorTensor_ :: JSVal -> IO JSVal
+
 -- imageDataToChannelMajorTensor :: TypedArray.Uint8ClampedArray -> Int -> Int -> IO [Float]
 -- imageDataToChannelMajorTensor arr width height = do
 --   let
@@ -75,11 +78,14 @@ imageToTensor img@(Img {base64Image}) [1,1,nRows,nCols] =
     return $ Right v
 
 -- Pixel-major RGB
-imageToTensor (Img {base64Image}) [-1,-1,-1,3] =
+imageToTensor img@(Img {base64Image}) [-1,-1,-1,3] =
   unsafePerformIO $ do
     (canvas, width, height) <- canvasWithImageNativeSize img
     imageData <- canvasImageDataNativeSize canvas
-    tensorVals <- imageDataToPixelMajorTensor_ 
+    tensorVals <- imageDataToPixelMajorTensor_ imageData
+    Just v <- fromJSVal tensorVals
+    return $ Right v
+
 imageToTensor _ _ = Left "TODO: Hack: Only batch-size-one is supported"
 
 resizeImage :: Img -> IO Img
@@ -102,6 +108,7 @@ canvasWithImageNativeSize img = liftIO $ do
   width <- imgWidth_ imgJs
   height <- imgHeight_ imgJs
   canvas <- Canvas.create width height
+  ctx <- Canvas.getContext canvas
   Canvas.drawImage imgJs 0 0 width height ctx
   return (canvas, width, height)
 
@@ -109,14 +116,17 @@ canvasWithImageNativeSize img = liftIO $ do
 foreign import javascript unsafe "ctx = $1.getContext('2d', {alpha: false}); $r = ctx.getImageData(0,0,$2,$3);"
   canvasImageData :: Canvas.Canvas -> Int -> Int -> IO JSVal
 
+foreign import javascript unsafe "w = $1.width; h = $1.height; ctx = $1.getContext('2d', {alpha: false}); $r = ctx.getImageData(0,0,w,h);"
+  canvasImageDataNativeSize :: Canvas.Canvas -> IO JSVal
+
 foreign import javascript unsafe "$r = document.createElement(\"img\"); ($r).src=($1);"
   createImageWithSrc_ :: JSString -> IO JSVal
 
 foreign import javascript unsafe "$1.width"
-  imgWidth_ :: JSVal -> IO Int
+  imgWidth_ :: Canvas.Image -> IO Int
 
 foreign import javascript unsafe "$1.height"
-  imgHeight_ :: JSVal -> IO Int
+  imgHeight_ :: Canvas.Image -> IO Int
 
 createImage :: MonadIO m => Img -> m Canvas.Image
 createImage (Img base64Bytes) = do
