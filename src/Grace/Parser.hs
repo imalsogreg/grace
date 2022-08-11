@@ -93,6 +93,18 @@ alternative = terminal matchAlternative
 int :: Parser r Int
 int = terminal matchInt
 
+matchDash :: Token -> Maybe ()
+matchDash Lexer.Dash = Just ()
+matchDash _ = Nothing
+
+negativeInt :: Parser r Int
+negativeInt =
+  terminal matchDash *> fmap negate int
+
+int' :: Parser r Int
+int' = int <|> negativeInt
+
+
 text :: Parser r Text
 text = terminal matchText
 
@@ -453,7 +465,7 @@ grammar = mdo
         <|> do  location <- locatedToken Lexer.ImageToTensor
                 token Lexer.At
                 token Lexer.OpenBracket
-                shapeElements <- int `sepBy` token Lexer.Comma
+                shapeElements <- int' `sepBy` token Lexer.Comma
                 token Lexer.CloseBracket
                 return Syntax.Builtin{ builtin = Syntax.ImageToTensor (Monotype.TensorShape shapeElements), .. }
 
