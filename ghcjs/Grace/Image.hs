@@ -13,7 +13,7 @@ import qualified Data.Text as Text
 import qualified Data.Maybe as Maybe
 import Data.JSString (JSString)
 import qualified Data.JSString as JSString
-import GHCJS.Marshal (fromJSVal)
+import GHCJS.Marshal (fromJSVal, toJSVal)
 import qualified JavaScript.TypedArray as TypedArray
 import Data.Text (Text)
 import System.IO.Unsafe (unsafePerformIO)
@@ -40,6 +40,9 @@ foreign import javascript unsafe "$r = new Array(); for (r = 0; r < $1; r++) { f
 
 foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r < $1.height; r++) { for (c = 0; c < w; c++) { i = c*4 + r * w * 4; d = $1.data; ($r).push(d[i]); ($r).push(d[i+1]); ($r).push(d[i+2]) }  };"
     imageDataToPixelMajorTensor_ :: JSVal -> IO JSVal
+
+foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; var i = 0; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { j = c * 4 + r * $3 * 4; d[j] = ($1)[i]; d[j+1] = ($1)[j+1]; d[j+2] = ($1)[i+2]; i = i + 4; }}; ctx.putImageData(iData);"
+  drawTensorToCanvas :: Canvas.Canvas -> JSVal -> Int -> Int -> IO ()
 
 -- imageDataToChannelMajorTensor :: TypedArray.Uint8ClampedArray -> Int -> Int -> IO [Float]
 -- imageDataToChannelMajorTensor arr width height = do
@@ -91,9 +94,13 @@ imageToTensor _ _ = Left "TODO: Hack: Only batch-size-one is supported"
 imageFromTensor :: [Float] -> [Int] -> Img
 
 -- Pixel-major rgb. 
-imageFromTensor rgbValues [-1,-1,-1,3] =
+imageFromTensor rgbValues [_,nRows,nCols,3] =
   unsafePerformIO $ do
-    -- canvas <- Canvas.create
+    jsValues <- toJSVal rgbValues
+    canvas <- Canvas.create nCols nRows
+    consoleLog "about to drawTensorToCanvas"
+    drawTensorToCanvas canvas jsValues nCols nRows
+    consoleLog "finished drawTensorToCanvas"
     undefined
     
   
