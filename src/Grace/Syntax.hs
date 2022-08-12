@@ -360,6 +360,10 @@ data Builtin
     -- ^
     --   >>> pretty (ImageToTensor (Monotype.TensorShape [1,3,28,28]))
     --   Image/toTensor @[1, 3, 28, 28]
+    | ImageFromTensor Monotype.TensorShape
+    -- ^
+    --   >>> pretty (ImageFromTensor (Monotype.TensorShape [1,3,28,28]))
+    --   Image/fromTensor @[1, 3, 28, 28]
     | IntegerEven
     -- ^
     --   >>> pretty IntegerEven

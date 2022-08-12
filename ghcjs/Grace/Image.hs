@@ -88,6 +88,16 @@ imageToTensor img@(Img {base64Image}) [-1,-1,-1,3] =
 
 imageToTensor _ _ = Left "TODO: Hack: Only batch-size-one is supported"
 
+imageFromTensor :: [Float] -> [Int] -> Img
+
+-- Pixel-major rgb. 
+imageFromTensor rgbValues [-1,-1,-1,3] =
+  unsafePerformIO $ do
+    -- canvas <- Canvas.create
+    undefined
+    
+  
+
 resizeImage :: Img -> IO Img
 resizeImage (Img base64Bytes) = do
   undefined

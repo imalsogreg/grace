@@ -364,8 +364,14 @@ subtype _A0 _B0 = do
             | s0 == s1 -> do
                 return ()
 
+        (Type.Shape { tensorShape = Monotype.TensorShape [_,-1,-1,nChanA] }, Type.Shape {tensorShape = Monotype.TensorShape [_,_,_,nChanB]}) ->
+          if nChanA == nChanB
+          then return ()
+          else error "Dynamically sized pixel-major image differs in channel count"
         (Type.Shape { tensorShape = shapeA }, Type.Shape {tensorShape = shapeB}) ->
-          if shapeA == shapeB then return () else error "NOPE"
+          if shapeA == shapeB
+          then return ()
+          else error "NOPE"
 
         (Type.Optional{ type_ = _A }, Type.Optional{ type_ = _B }) -> do
             subtype _A _B
