@@ -264,7 +264,7 @@ evaluate type_ env syntax =
               Syntax.Scalar {} -> [evaluate type_ env x]
               Syntax.List { elements = xs } -> normalizeElements xs
           in
-            Value.Tensor (Seq.fromList $ normalizeElements elements)
+            Value.Tensor shape (Seq.fromList $ normalizeElements elements)
 
         Syntax.TritonCall{..} -> Value.TritonCall modelName
 
@@ -308,7 +308,7 @@ apply ((Value.Application (Value.Builtin ListTopNLabels) (Value.Scalar (Natural 
     in Value.List (Seq.fromList (List.take (fromIntegral $ toInteger n) sorted_elems))
 apply (Value.Application (Value.Application (Value.Builtin ListZipWith) f) (Value.List elemsA)) (Value.List elemsB) type_ =
     Value.List (Seq.zipWith (\a b -> apply (apply f a type_) b type_) elemsA elemsB)
-apply (Value.TritonCall modelName) tensor@(Value.Tensor _) _ =
+apply (Value.TritonCall modelName) tensor@(Value.Tensor _ _) _ =
     unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensor
 apply
     (Value.Application
@@ -347,7 +347,7 @@ apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.
     Left err -> error err
     Right elements -> let
       tensorElements = (\v -> Value.Scalar (Syntax.Real $ realToFrac v)) <$> elements
-      in Value.Tensor (Seq.fromList tensorElements)
+      in Value.Tensor (TensorShape shape) (Seq.fromList tensorElements)
 apply (Value.Builtin ListIndexed) (Value.List elements) _ =
     Value.List (Seq.mapWithIndex adapt elements)
   where
@@ -407,13 +407,14 @@ apply (Value.Builtin TensorFromList) (Value.List xs) type_ =
   case type_ of
     Tensor _ (Shape { tensorShape = TensorShape dims }) _  ->
       let
+        -- TODO: What if the shape contains -1?
         expectedLength = List.foldl' (*) 1 dims
       in
         if expectedLength == length xs
-        then Value.Tensor xs
+        then Value.Tensor (TensorShape dims) xs
         else error "Dimension mismatch"
     _ -> error $ "Impossible case, application does not results in not a tensor: " <> Text.unpack (renderStrict True 50 type_)
-apply (Value.Builtin TensorToList) (Value.Tensor xs) _ =
+apply (Value.Builtin TensorToList) (Value.Tensor _ xs) _ =
   Value.List xs
 apply
     (Value.Application (Value.Builtin TextEqual) (Value.Scalar (Text l)))
@@ -552,7 +553,7 @@ quote names value =
         Value.Builtin builtin ->
             Syntax.Builtin{..}
 
-        Value.Tensor elements ->
+        Value.Tensor _ elements ->
             Syntax.Application
                 { function = Syntax.Builtin { builtin = Syntax.TensorFromList, .. }
                 , argument = Syntax.List

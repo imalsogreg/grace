@@ -16,6 +16,7 @@ import Data.Sequence (Seq)
 import Data.String (IsString(..))
 import Data.Text (Text)
 import Grace.Location (Location)
+import qualified Grace.Monotype as Monotype
 import Grace.Syntax (Builtin, Operator, Scalar, Syntax)
 import Grace.Type (Type)
 
@@ -96,7 +97,7 @@ data Value
     | Builtin Builtin
     | Scalar Scalar
     | Operator Value Operator Value
-    | Tensor (Seq Value)
+    | Tensor Monotype.TensorShape (Seq Value)
     | TritonCall Text
     deriving stock (Eq, Show)
 

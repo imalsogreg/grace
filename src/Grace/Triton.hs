@@ -64,20 +64,20 @@ normalizeTritonCallApplication prefixedModelName value = do
 
     lowerTensorValue :: GraceValue.Value -> TritonTensor
     lowerTensorValue t = case t of
-      GraceValue.Tensor elements ->
+      GraceValue.Tensor (Monotype.TensorShape shape) elements ->
         TritonTensor { tensorName = inputTensorName
                      , datatype = FP32
-                     , shape = inputTensorShape
+                     , shape = shape
                      , data_ = concat $ toList $ lowerElements <$> (elements)
                      }
       _ -> error "TODO: should have passed a grace Tensor value"
 
     reifyTritonTensor :: TritonTensor -> GraceValue.Value
-    reifyTritonTensor TritonTensor { data_ } =
-      GraceValue.Tensor $ fromList $ fmap reifyElement data_
+    reifyTritonTensor TritonTensor { data_, shape } =
+      GraceValue.Tensor (Monotype.TensorShape shape) $ fromList (fmap reifyElement data_)
 
   let inputs = case value of
-        tensor@(GraceValue.Tensor _) -> [lowerTensorValue tensor]
+        tensor@(GraceValue.Tensor _ _) -> [lowerTensorValue tensor]
         _ -> error "TODO: Unimplemented: input value is a record with multiple tensors"
   InferenceResponse { outputs = [outputTensor] } <- infer manager mmName (InferenceRequest { inputs = inputs })
 

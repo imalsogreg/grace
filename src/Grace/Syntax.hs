@@ -114,7 +114,7 @@ data Syntax s a
     --   x + y
     | Builtin { location :: s, builtin :: Builtin }
     | Embed { location :: s, embedded :: a }
-    | Tensor { location :: s, elements :: Seq (Syntax s a) } -- TODO Should this be an Array, not Seq?
+    | Tensor { location :: s, shape :: Monotype.TensorShape, elements :: Seq (Syntax s a) } -- TODO Should this be an Array, not Seq?
     | TritonCall { location :: s, modelName :: Text }
     deriving stock (Eq, Foldable, Functor, Generic, Lift, Show, Traversable)
 
