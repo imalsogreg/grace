@@ -11,9 +11,12 @@ module Grace.Triton where
 
 import Data.List (uncons, find)
 import Data.Foldable (toList)
+import qualified Data.Text as Text
 import Data.ByteString.Lazy( fromStrict, toStrict )
 import Data.Traversable (forM)
+import qualified Data.HashMap.Strict.InsOrd as InsOrdHashMap
 import Data.Sequence (fromList)
+import Data.Scientific (Scientific)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text (Text, unpack)
 import Data.Aeson (eitherDecode, withObject, (.:), encode, object, FromJSON(..), ToJSON(..), (.=), withText)
@@ -53,36 +56,66 @@ normalizeTritonCallApplication prefixedModelName value = do
                         }) =
       find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
 
-    lowerElements :: GraceValue.Value -> [Float]
-    lowerElements v = case v of
-      GraceValue.Scalar ( GraceSyntax.Real r ) -> [realToFrac r]
-      GraceValue.Scalar ( GraceSyntax.Natural r ) -> [realToFrac r] -- TODO: It seems like a bug that we need this - we _are_ seeing Nats.
-      GraceValue.List (xs) -> concat $ lowerElements <$> xs
-      _ -> error ("val: " <> show v)
+    Just model = find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
+    -- let inputTensorNamesAndShapes = mmInputs model
 
-    reifyElement v = GraceValue.Scalar (GraceSyntax.Real $ realToFrac v)
-
-    lowerTensorValue :: GraceValue.Value -> TritonTensor
-    lowerTensorValue t = case t of
-      GraceValue.Tensor (Monotype.TensorShape shape) elements ->
-        TritonTensor { tensorName = inputTensorName
-                     , datatype = FP32
-                     , shape = shape
-                     , data_ = concat $ toList $ lowerElements <$> (elements)
-                     }
-      _ -> error "TODO: should have passed a grace Tensor value"
-
-    reifyTritonTensor :: TritonTensor -> GraceValue.Value
-    reifyTritonTensor TritonTensor { data_, shape } =
-      GraceValue.Tensor (Monotype.TensorShape shape) $ fromList (fmap reifyElement data_)
 
   let inputs = case value of
-        tensor@(GraceValue.Tensor _ _) -> [lowerTensorValue tensor]
+        tensor@(GraceValue.Tensor _ _) ->
+          let [TritonTensorType {tvtName = inputTensorName}] = mmInputs model
+          in [lowerTensorValue inputTensorName tensor]
+        (GraceValue.Record fields) ->
+          if length fields /= length (mmInputs model)
+          then
+            error "Internal error: Argument has different number of record fields than triton method expects."
+          else
+            fmap (\(TritonTensorType {tvtName}) ->
+                    case InsOrdHashMap.lookup tvtName fields of
+                      Nothing -> error $ "Internal error: no field " <> Text.unpack tvtName <> " in argument"
+                      Just t  -> lowerTensorValue tvtName t
+                    ) (mmInputs model)
         _ -> error "TODO: Unimplemented: input value is a record with multiple tensors"
   InferenceResponse { outputs = [outputTensor] } <- infer manager mmName (InferenceRequest { inputs = inputs })
 
   return $ reifyTritonTensor outputTensor
-      
+
+-- | Helper functions for normalizaTritonCallApplication
+lowerElements :: GraceValue.Value -> [Scientific]
+lowerElements v = case v of
+  GraceValue.Scalar ( GraceSyntax.Real r ) -> [realToFrac r]
+  GraceValue.Scalar ( GraceSyntax.Natural r ) -> [realToFrac r] -- TODO: It seems like a bug that we need this - we _are_ seeing Nats.
+  GraceValue.List (xs) -> concat $ lowerElements <$> xs
+  _ -> error ("val: " <> show v)
+
+-- | Helper functions for normalizaTritonCallApplication
+reifyFloatElement :: Scientific -> GraceValue.Value
+reifyFloatElement v = GraceValue.Scalar (GraceSyntax.Real $ realToFrac v)
+
+reifyIntElement :: Scientific -> GraceValue.Value
+reifyIntElement v = GraceValue.Scalar (GraceSyntax.Integer (round v))
+
+-- | Helper functions for normalizaTritonCallApplication
+lowerTensorValue :: Text -> GraceValue.Value -> TritonTensor
+lowerTensorValue inputTensorName t = case t of
+  GraceValue.Tensor (Monotype.TensorShape shape) elements ->
+    TritonTensor { tensorName = inputTensorName
+                  , datatype = FP32
+                  , shape = shape
+                  , data_ = concat $ toList $ lowerElements <$> (elements)
+                  }
+  _ -> error "TODO: should have passed a grace Tensor value"
+
+-- | Helper functions for normalizaTritonCallApplication
+reifyTritonTensor :: TritonTensor -> GraceValue.Value
+reifyTritonTensor TritonTensor { data_, datatype, shape } =
+  let
+    reifiedValues :: [GraceValue.Value]
+    reifiedValues = case datatype of
+        FP32 -> fmap reifyFloatElement data_
+        INT64 -> fmap reifyIntElement data_
+  in
+  GraceValue.Tensor (Monotype.TensorShape shape) $ fromList reifiedValues
+
 
 tritonPrimitivesForModel :: ModelMetadata -> (Text, GraceType.Type Location, GraceValue.Value)
 tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
@@ -142,7 +175,7 @@ data TritonTensor = TritonTensor
   { tensorName :: Text
   , datatype :: DataType
   , shape :: [Int]
-  , data_ :: [Float]
+  , data_ :: [Scientific]
   }
   deriving (Eq, Show, Generic)
 

@@ -45,4 +45,19 @@ imageToTensor (Img {base64Image}) [1,nChans,nRows,nCols] = do
     channelMajor = List.transpose pixelList
 
   pure $ List.concat channelMajor
+imageToTensor (Img {base64Image}) [-1,-1,-1, 3] = do
+  imageBytes <- Base64.decode (Text.encodeUtf8 base64Image)
+  image <- fmap Juicy.convertRGB8 $ Juicy.decodeJpeg imageBytes
+  let
+    pixelValues :: Juicy.PixelRGB8 -> [Float]
+    pixelValues (Juicy.PixelRGB8 r g b) =
+      let
+          r' = realToFrac r / 255.0
+          g' = realToFrac g / 255.0
+          b' = realToFrac b / 255.0
+        in [ r', g', b' ]
+
+    pixelList = fmap pixelValues $ Lens.toListOf Juicy.imagePixels image
+
+  pure $ List.concat pixelList
 imageToTensor _ _ = Left "TODO: HACK: Only batch-size-one is supported"

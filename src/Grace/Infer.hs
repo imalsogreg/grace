@@ -1833,6 +1833,15 @@ infer e0 = do
                      , ..
                      }
 
+        Syntax.Builtin{ builtin = Syntax.ImageFromTensor shape, .. } -> do
+          return $
+                Type.Tensor
+                     { shape = Type.Shape { tensorShape = shape, ..}
+                     , type_ = Type.Scalar { scalar = Monotype.Real, .. }
+                     , ..
+                     }
+                     ~>  Type.Scalar { scalar = Monotype.Image, .. }
+
         Syntax.Builtin{ builtin = Syntax.IntegerAbs, .. } -> do
             return
                 (   Type.Scalar{ scalar = Monotype.Integer, .. }

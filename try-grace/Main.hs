@@ -915,12 +915,13 @@ renderInput ref Type.Tensor{ type_ } = do
 
             Monad.when (null values) $ Prelude.error "No values"
 
-            return (Value.Tensor (Seq.fromList values))
+            -- TODO: Fix, the tensor shape is totally wrong.
+            return (Value.Tensor (Monotype.TensorShape [1]) (Seq.fromList values))
 
     return (ul, get)
 
 renderInput _ _ = do
-    consoleLog "No method for rendering this type"
+    -- consoleLog "No method for rendering this type"
     empty
 
 data DebounceStatus = Ready | Lock | Running (Async ())
@@ -963,8 +964,6 @@ setInfo msg = do
 main :: IO ()
 main = do
     putStrLn "MAIN"
-    consoleLog "TESTING CONSOLE.LOG in main"
-    consoleLog "TESTING CONSOLE.LOG in main again"
     input         <- getElementById "input"
     output        <- getElementById "output"
     error         <- getElementById "error"
@@ -1001,7 +1000,7 @@ main = do
             setDisplay error  "block"
 
     let setOutput type_ value = do
-            consoleLog ("RENDER " <> valueToText value <> " : " <> typeToText type_)
+            -- consoleLog ("RENDER " <> valueToText value <> " : " <> typeToText type_)
             renderValue counter output type_ value
 
             typeSpan <- createElement "span"
