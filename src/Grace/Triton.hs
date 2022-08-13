@@ -20,6 +20,7 @@ import Data.Scientific (Scientific)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text (Text, unpack)
 import Data.Aeson (eitherDecode, withObject, (.:), encode, object, FromJSON(..), ToJSON(..), (.=), withText)
+import Debug.Trace (trace)
 import GHC.Generics
 import Grace.HTTP as HTTP
 import Grace.Type (Type(..))
@@ -50,15 +51,8 @@ normalizeTritonCallApplication prefixedModelName value = do
   let
 
     -- This also only works for single-input, single-output models.
-    Just (ModelMetadata { mmName
-                        , mmInputs = [TritonTensorType{ tvtName = inputTensorName, tvtShape = inputTensorShape }]
-                        , mmOutputs = [_modelOutput]
-                        }) =
-      find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
-
     Just model = find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
     -- let inputTensorNamesAndShapes = mmInputs model
-
 
   let inputs = case value of
         tensor@(GraceValue.Tensor _ _) ->
@@ -75,7 +69,7 @@ normalizeTritonCallApplication prefixedModelName value = do
                       Just t  -> lowerTensorValue tvtName t
                     ) (mmInputs model)
         _ -> error "TODO: Unimplemented: input value is a record with multiple tensors"
-  InferenceResponse { outputs = [outputTensor] } <- infer manager mmName (InferenceRequest { inputs = inputs })
+  InferenceResponse { outputs = [outputTensor] } <- infer manager (mmName model) (InferenceRequest { inputs = (trace (show inputs) inputs) })
 
   return $ reifyTritonTensor outputTensor
 

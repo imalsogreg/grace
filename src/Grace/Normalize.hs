@@ -14,6 +14,7 @@ module Grace.Normalize
     ) where
 
 import Data.Scientific (Scientific)
+import qualified Data.Foldable as Foldable
 import Data.Sequence (Seq(..), ViewL(..))
 import Data.Text (Text)
 import Data.Void (Void)
@@ -21,7 +22,7 @@ import Data.Foldable (toList)
 import Debug.Trace (trace, traceShowId)
 import Grace.Location (Location)
 import Grace.Infer (typeOf)
-import Grace.Image (Img(..), imageToTensor)
+import Grace.Image (Img(..), imageToTensor, imageFromTensor)
 import Grace.Syntax (Builtin(..), Scalar(..), Syntax)
 import Grace.Type (Type(..))
 import qualified Grace.Triton as Triton
@@ -310,6 +311,8 @@ apply (Value.Application (Value.Application (Value.Builtin ListZipWith) f) (Valu
     Value.List (Seq.zipWith (\a b -> apply (apply f a type_) b type_) elemsA elemsB)
 apply (Value.TritonCall modelName) tensor@(Value.Tensor _ _) _ =
     unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensor
+apply (Value.TritonCall modelName) tensors@(Value.Record _) _ =
+    unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensors
 apply
     (Value.Application
         (Value.Application (Value.Builtin ListEqual) f)
@@ -345,9 +348,20 @@ apply
 apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.Image imageBytes)) resultType =
   case imageToTensor (Img imageBytes) shape of
     Left err -> error err
-    Right elements -> let
-      tensorElements = (\v -> Value.Scalar (Syntax.Real $ realToFrac v)) <$> elements
-      in Value.Tensor (TensorShape shape) (Seq.fromList tensorElements)
+    Right ((width, height), elements) ->
+      let
+        tensorElements = (\v -> Value.Scalar (Syntax.Real $ realToFrac v)) <$> elements
+        newShape = case shape of
+          [-1,-1,-1,3] -> [1,height, width, 3]
+          [1,3,_,_] -> [1,3, height, width]
+          _ -> error $ "Don't know what to do to normalize this shape: " <> show shape
+      in Value.Tensor (trace (show newShape) $ TensorShape newShape) (Seq.fromList tensorElements)
+apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (TensorShape runtimeShape) elements) resultType =
+  let
+    floatElements = (\(Value.Scalar (Syntax.Real v)) -> realToFrac v) <$> elements
+    Img img = imageFromTensor runtimeShape (Foldable.toList floatElements)
+  in
+    Value.Scalar (Syntax.Image img)
 apply (Value.Builtin ListIndexed) (Value.List elements) _ =
     Value.List (Seq.mapWithIndex adapt elements)
   where

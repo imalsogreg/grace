@@ -65,10 +65,10 @@ foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImag
 -- and we cheat by putting it into a batch of 1. We also assume that
 -- the second dimension is the channel count, and only handle 1 channel
 -- (monochrome) or 3 channels (rgb). We assume the image is a jpeg.
-imageToTensor :: Img -> [Int] -> Either String [Float]
+imageToTensor :: Img -> [Int] -> Either String ((Int,Int), [Float])
 
 -- No image.
-imageToTensor (Img {base64Image = ""}) [nBatch,nChans,nRows,nCols] = Right (replicate (nBatch * nChans * nRows * nCols) 0.0)
+imageToTensor (Img {base64Image = ""}) [nBatch,nChans,nRows,nCols] = Left "no image" -- Right ((nCols, nRows), replicate (nBatch * nChans * nRows * nCols) 0.0)
 
 -- Monochrome.
 imageToTensor img@(Img {base64Image}) [1,1,nRows,nCols] =
@@ -78,7 +78,7 @@ imageToTensor img@(Img {base64Image}) [1,1,nRows,nCols] =
     tensorVals <- imageDataToMonochromeTensor_ nCols nRows imageData
     Just v <- fromJSVal tensorVals
     consoleLog (Text.pack $ show v)
-    return $ Right v
+    return $ Right ((nCols,nRows), v)
 
 -- Pixel-major RGB
 imageToTensor img@(Img {base64Image}) [-1,-1,-1,3] =
@@ -87,14 +87,14 @@ imageToTensor img@(Img {base64Image}) [-1,-1,-1,3] =
     imageData <- canvasImageDataNativeSize canvas
     tensorVals <- imageDataToPixelMajorTensor_ imageData
     Just v <- fromJSVal tensorVals
-    return $ Right v
+    return $ Right ((width, height), v)
 
 imageToTensor _ _ = Left "TODO: Hack: Only batch-size-one is supported"
 
-imageFromTensor :: [Float] -> [Int] -> Img
+imageFromTensor :: [Int] ->[Float] ->  Img
 
 -- Pixel-major rgb. 
-imageFromTensor rgbValues [_,nRows,nCols,3] =
+imageFromTensor [_,nRows,nCols,3] rgbValues =
   unsafePerformIO $ do
     jsValues <- toJSVal rgbValues
     canvas <- Canvas.create nCols nRows

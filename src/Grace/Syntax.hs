@@ -402,6 +402,7 @@ instance Pretty Builtin where
     pretty RealNegate     = Pretty.builtin "Real/negate"
     pretty RealShow       = Pretty.builtin "Real/show"
     pretty (ImageToTensor shape)  = Pretty.builtin "Image/toTensor @" <> pretty shape
+    pretty (ImageFromTensor shape)  = Pretty.builtin "Image/fromTensor @" <> pretty shape
     pretty IntegerAbs     = Pretty.builtin "Integer/abs"
     pretty IntegerEven    = Pretty.builtin "Integer/even"
     pretty IntegerNegate  = Pretty.builtin "Integer/negate"
