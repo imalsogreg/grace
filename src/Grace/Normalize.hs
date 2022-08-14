@@ -40,6 +40,10 @@ import qualified Data.Text as Text
 import qualified Grace.Syntax as Syntax
 import qualified Grace.Value as Value
 
+import Data.JSString (JSString)
+import qualified Data.JSString as JSString
+import qualified Data.JSString.Text as JSString
+
 {- $setup
 
    >>> :set -XOverloadedStrings
@@ -267,7 +271,7 @@ evaluate type_ env syntax =
           in
             Value.Tensor shape (Seq.fromList $ normalizeElements elements)
 
-        Syntax.TritonCall{..} -> Value.TritonCall modelName
+        Syntax.TritonCall{..} -> dbg "Normalize triton call" $ Value.TritonCall modelName
 
 {-| This is the function that implements function application, including
     evaluating anonymous functions and evaluating all built-in functions.
@@ -346,6 +350,7 @@ apply
             EmptyL  -> result
             y :< ys -> loop ys (apply (apply cons y type_) result type_) -- TODO: I'm not sure if type_ is right here.
 apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.Image imageBytes)) resultType =
+  dbg "NORMALIZE Image/toTensor" $
   case imageToTensor (Img imageBytes) shape of
     Left err -> error err
     Right ((width, height), elements) ->
@@ -357,6 +362,7 @@ apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.
           _ -> error $ "Don't know what to do to normalize this shape: " <> show shape
       in Value.Tensor (trace (show newShape) $ TensorShape newShape) (Seq.fromList tensorElements)
 apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (TensorShape runtimeShape) elements) resultType =
+  dbg "NORMALIZE Image/fromTensor" $
   let
     floatElements = (\(Value.Scalar (Syntax.Real v)) -> realToFrac v) <$> elements
     Img img = imageFromTensor runtimeShape (Foldable.toList floatElements)
@@ -579,3 +585,12 @@ quote names value =
           Syntax.Variable { index = 0, .. }
   where
     location = ()
+
+foreign import javascript unsafe "console.log($1)"
+  consoleLog_ :: JSString -> IO ()
+
+consoleLog :: Text -> IO ()
+consoleLog = consoleLog_ . JSString.pack . Text.unpack
+
+dbg :: Text -> a -> a
+dbg t a = seq (unsafePerformIO $ consoleLog t) a

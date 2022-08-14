@@ -97,6 +97,7 @@ executable try-grace
   build-depends:       base
                      , aeson
                      , async
+                     , deepseq
                      , ghcjs-base
                      , containers
                      , grace

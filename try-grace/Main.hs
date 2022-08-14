@@ -2,12 +2,15 @@
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE MultiWayIf        #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
 import Control.Applicative (empty)
+import Control.DeepSeq (force)
 import Control.Concurrent.Async (Async)
 import Control.Exception (Exception(..))
+import qualified Control.Exception as Exception
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Trans.Maybe (MaybeT)
 import Data.Foldable (toList)
@@ -467,6 +470,7 @@ renderValue ref parent Type.Function{ input, output } function = do
 
     case result of
         Nothing -> do
+            consoleLog "renderDefault"
             renderDefault parent function
         Just (inputVal, get) -> do
             hr <- createElement "hr"
@@ -474,10 +478,26 @@ renderValue ref parent Type.Function{ input, output } function = do
             outputVal <- createElement "div"
 
             let invoke = do
-                    value <- get
 
-                    consoleLog ("FUNCTION rendering " <> valueToText value <> " : " <> typeToText output)
-                    renderValue ref outputVal output (Normalize.apply function value output)
+                    result :: Either Exception.SomeException Value <- Exception.try =<< Exception.evaluate <$> get
+                    case result of
+                      Right value -> do
+                        consoleLog "TRY SUCCESS..."
+                        valText <- Exception.catch (Exception.evaluate $ valueToText value)
+                            (\(e::  Exception.SomeException) -> consoleLog ("valueToText error: " <> Text.pack (show e)) >> pure "ERROR")
+                        typeText <- Exception.catch (Exception.evaluate $ typeToText output)
+                            (\(e:: Exception.SomeException) -> consoleLog ("typeToText error: " <> Text.pack (show e)) >> pure "ERROR")
+                        consoleLog ("FUNCTION rendering " <> valText <> " : " <> typeText)
+                        outputValue <- Exception.try $ Exception.evaluate $ Normalize.apply function value output
+                        consoleLog ("invoke got output value: " <> Text.pack (show outputValue))
+                        case outputValue of
+                          Right v -> do
+                            consoleLog "outputValue is good"
+                            renderValue ref outputVal output v
+                          Left (e :: Exception.SomeException) -> consoleLog ("TRY NORMALIZE FAILURE: " <> Text.pack (show e))
+                      Left err -> do
+                        consoleLog "TRY FAILURE"
+                        consoleLog ("Exception when invoking input")
 
             callback <- Callback.asyncCallback invoke
 
@@ -585,21 +605,23 @@ renderInput _ Type.Scalar{ scalar = Monotype.Natural } = do
     return (input, get)
 
 renderInput _ Type.Scalar { scalar = Monotype.Image } = do
-  -- consoleLog "renderInput for Image"
+  consoleLog "renderInput for Image"
   input <- createElement "input"
 
   -- consoleLog "about to setAttribute for input"
   setAttribute input "type" "file"
   setAttribute input "accept" ".jpeg,.jpg" -- TODO: For now, only accept jpeg images.
                                            -- This invariant comes from core Grace Image monotype.
-  -- consoleLog "finished setAttribute for input"
-  
+  consoleLog "finished setAttribute for input"
+
+  consoleLog "about to define get for image"
   let get = do
         -- consoleLog "get for Image input"
-        imgBytes <- toImageValue input
+        imgBytes <- fmap Maybe.fromJust $ toImageValue input
         -- consoleLog "finished toImageValue"
-        return (Value.Scalar (Syntax.Image (Maybe.fromMaybe "" imgBytes)))
+        return (Value.Scalar (Syntax.Image imgBytes))
 
+  consoleLog "finishing renderInput for Image"
   return (input, get)
 
 renderInput _ Type.Scalar{ scalar = Monotype.JSON } = do
