@@ -617,7 +617,7 @@ renderInput _ Type.Scalar { scalar = Monotype.Image } = do
   consoleLog "about to define get for image"
   let get = do
         -- consoleLog "get for Image input"
-        imgBytes <- fmap Maybe.fromJust $ toImageValue input
+        imgBytes <- Maybe.fromMaybe "http://localhost:8004/cat_small.jpg" <$> toImageValue input
         -- consoleLog "finished toImageValue"
         return (Value.Scalar (Syntax.Image imgBytes))
 

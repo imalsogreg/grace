@@ -41,7 +41,7 @@ foreign import javascript unsafe "$r = new Array(); for (r = 0; r < $1; r++) { f
 foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r < $1.height; r++) { for (c = 0; c < w; c++) { i = c*4 + r * w * 4; d = $1.data; ($r).push(d[i]); ($r).push(d[i+1]); ($r).push(d[i+2]) }  };"
     imageDataToPixelMajorTensor_ :: JSVal -> IO JSVal
 
-foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; var i = 0; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { j = c * 4 + r * $3 * 4; d[j] = ($1)[i]; d[j+1] = ($1)[j+1]; d[j+2] = ($1)[i+2]; i = i + 4; }}; ctx.putImageData(iData);"
+foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c * 3 + r * $3 * 3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i+1] * 255; d[j+2] = ($2)[i+2] * 255; d[j+3] = 255; }}; iData.data = d; console.log(iData); console.log(\"d:\"); console.log(d); ctx.putImageData(iData,0,0);"
   drawTensorToCanvas :: Canvas.Canvas -> JSVal -> Int -> Int -> IO ()
 
 -- imageDataToChannelMajorTensor :: TypedArray.Uint8ClampedArray -> Int -> Int -> IO [Float]
@@ -98,10 +98,20 @@ imageFromTensor [_,nRows,nCols,3] rgbValues =
   unsafePerformIO $ do
     jsValues <- toJSVal rgbValues
     canvas <- Canvas.create nCols nRows
+    appendChild_ canvas -- TODO: temporary, debugging
     consoleLog "about to drawTensorToCanvas"
     drawTensorToCanvas canvas jsValues nCols nRows
     consoleLog "finished drawTensorToCanvas"
-    undefined
+    Img <$> toDataUrl canvas
+
+foreign import javascript unsafe "$1.toDataURL('image/jpeg', 0.5)"
+    toDataUrl_ :: Canvas.Canvas -> IO JSString
+
+foreign import javascript unsafe "c = document.getElementsByClassName('container')[0]; c.appendChild($1);"
+    appendChild_ :: Canvas.Canvas -> IO ()
+
+toDataUrl :: Canvas.Canvas -> IO Text
+toDataUrl canvas = Text.pack . JSString.unpack <$> toDataUrl_ canvas
     
   
 
