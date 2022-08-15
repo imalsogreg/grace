@@ -29,6 +29,7 @@ library
                      , string-interpolate
                      , template-haskell
                      , text >= 1.2.4.0
+                     , time
                      , unordered-containers
                      , vector
 
@@ -106,6 +107,7 @@ executable try-grace
                      , scientific
                      , stm
                      , text
+                     , time
                      , transformers
                      , uri-encode
 

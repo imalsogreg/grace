@@ -9,6 +9,7 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Unsafe.Coerce (unsafeCoerce)
 import qualified Control.Concurrent as Concurrent
 import qualified JavaScript.Web.Canvas as Canvas
+import Data.Time (getCurrentTime, diffUTCTime)
 import qualified Data.Text as Text
 import qualified Data.Maybe as Maybe
 import Data.JSString (JSString)
@@ -38,10 +39,10 @@ consoleLog t = liftIO . consoleLog_ . JSString.pack $ Text.unpack t
 foreign import javascript unsafe "$r = new Array(); for (r = 0; r < $1; r++) { for (c = 0; c < $2; c++) { i = c*4 + r * $1 * 4; red = ($3.data)[i]; green = ($3.data)[i+1]; blue = ($3.data)[i+2]; color_sum = red + green + blue; avg = color_sum * 0.001307; ($r).push(avg)};  }"
     imageDataToMonochromeTensor_ :: Int -> Int -> JSVal -> IO JSVal
 
-foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r < $1.height; r++) { for (c = 0; c < w; c++) { i = c*4 + r * w * 4; d = $1.data; ($r).push(d[i]); ($r).push(d[i+1]); ($r).push(d[i+2]) }  };"
+foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r < $1.height; r++) { for (c = 0; c < w; c++) { i = c*4 + r * w * 4; d = $1.data; ($r).push(d[i] * 0.001307); ($r).push(d[i+1] * 0.001307); ($r).push(d[i+2] * 0.001307) }  };"
     imageDataToPixelMajorTensor_ :: JSVal -> IO JSVal
 
-foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c * 3 + r * $3 * 3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i+1] * 255; d[j+2] = ($2)[i+2] * 255; d[j+3] = 255; }}; iData.data = d; console.log(iData); console.log(\"d:\"); console.log(d); ctx.putImageData(iData,0,0);"
+foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c * 3 + r * $3 * 3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i+1] * 255; d[j+2] = ($2)[i+2] * 255; d[j+3] = 255; }}; iData.data = d; ctx.putImageData(iData,0,0);"
   drawTensorToCanvas :: Canvas.Canvas -> JSVal -> Int -> Int -> IO ()
 
 -- imageDataToChannelMajorTensor :: TypedArray.Uint8ClampedArray -> Int -> Int -> IO [Float]
@@ -77,16 +78,18 @@ imageToTensor img@(Img {base64Image}) [1,1,nRows,nCols] =
     imageData <- canvasImageData canvas nCols nRows
     tensorVals <- imageDataToMonochromeTensor_ nCols nRows imageData
     Just v <- fromJSVal tensorVals
-    consoleLog (Text.pack $ show v)
     return $ Right ((nCols,nRows), v)
 
 -- Pixel-major RGB
 imageToTensor img@(Img {base64Image}) [-1,-1,-1,3] =
   unsafePerformIO $ do
+    t0 <- getCurrentTime
     (canvas, width, height) <- canvasWithImageNativeSize img
     imageData <- canvasImageDataNativeSize canvas
     tensorVals <- imageDataToPixelMajorTensor_ imageData
     Just v <- fromJSVal tensorVals
+    t1 <- getCurrentTime
+    consoleLog (Text.pack $ "imageToTensor took: " <> show (diffUTCTime t1 t0))
     return $ Right ((width, height), v)
 
 imageToTensor _ _ = Left "TODO: Hack: Only batch-size-one is supported"
@@ -99,9 +102,7 @@ imageFromTensor [_,nRows,nCols,3] rgbValues =
     jsValues <- toJSVal rgbValues
     canvas <- Canvas.create nCols nRows
     appendChild_ canvas -- TODO: temporary, debugging
-    consoleLog "about to drawTensorToCanvas"
     drawTensorToCanvas canvas jsValues nCols nRows
-    consoleLog "finished drawTensorToCanvas"
     Img <$> toDataUrl canvas
 
 foreign import javascript unsafe "$1.toDataURL('image/jpeg', 0.5)"

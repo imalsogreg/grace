@@ -10,6 +10,7 @@ import Control.Applicative (empty)
 import Control.DeepSeq (force)
 import Control.Concurrent.Async (Async)
 import Control.Exception (Exception(..))
+import Data.Time (getCurrentTime, diffUTCTime)
 import qualified Control.Exception as Exception
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Trans.Maybe (MaybeT)
@@ -339,21 +340,20 @@ renderValue _ parent _ (Value.Scalar Null) = do
     replaceChild parent span
 
 renderValue _ parent _ (Value.Scalar (Syntax.Image imageInner)) = do
-  consoleLog "renderValue for IMAGE!"
   if imageInner == ""
   then
     do
-      consoleLog "EMPTY IMAGE"
       span <- createElement "span"
       setTextContent span "No image selected"
       replaceChild parent span
   else
     do
-      consoleLog "REAL IMAGE"
+      t0 <- getCurrentTime
       img <- createElement "img"
       setAttribute img "src" imageInner
-      consoleLog "CREATED img element and set src attribute"
       replaceChild parent img
+      t1 <- getCurrentTime
+      consoleLog $ Text.pack $ "renderValue took: " <> show (diffUTCTime t1 t0)
 
 renderValue _ parent type_ value@Value.Tensor{} = do
   span <- createElement "span"
@@ -462,15 +462,12 @@ renderValue ref parent outer (Application (Value.Alternative alternative) value)
     renderValue ref parent recordType recordValue
 
 renderValue ref parent Type.Function{ input, output } function = do
-    consoleLog "RENDER FUNCTION"
     result <- Maybe.runMaybeT $ do
-      liftIO $ putStrLn "RENDER INPUT"
       consoleLog ("about to renderInput for input type: " <> typeToText input)
       (renderInput ref input)
 
     case result of
         Nothing -> do
-            consoleLog "renderDefault"
             renderDefault parent function
         Just (inputVal, get) -> do
             hr <- createElement "hr"
@@ -482,18 +479,20 @@ renderValue ref parent Type.Function{ input, output } function = do
                     result :: Either Exception.SomeException Value <- Exception.try =<< Exception.evaluate <$> get
                     case result of
                       Right value -> do
-                        consoleLog "TRY SUCCESS..."
-                        valText <- Exception.catch (Exception.evaluate $ valueToText value)
-                            (\(e::  Exception.SomeException) -> consoleLog ("valueToText error: " <> Text.pack (show e)) >> pure "ERROR")
+                        -- valText <- Exception.catch (Exception.evaluate $ valueToText value)
+                        --     (\(e::  Exception.SomeException) -> consoleLog ("valueToText error: " <> Text.pack (show e)) >> pure "ERROR")
                         typeText <- Exception.catch (Exception.evaluate $ typeToText output)
                             (\(e:: Exception.SomeException) -> consoleLog ("typeToText error: " <> Text.pack (show e)) >> pure "ERROR")
-                        consoleLog ("FUNCTION rendering " <> valText <> " : " <> typeText)
+                        t0 <- getCurrentTime
                         outputValue <- Exception.try $ Exception.evaluate $ Normalize.apply function value output
-                        consoleLog ("invoke got output value: " <> Text.pack (show outputValue))
+                        t1 <- getCurrentTime
+                        consoleLog $ Text.pack $ "Normalize took: " <> show (diffUTCTime t1 t0)
                         case outputValue of
                           Right v -> do
-                            consoleLog "outputValue is good"
+                            t0 <- getCurrentTime
                             renderValue ref outputVal output v
+                            t1 <- getCurrentTime
+                            consoleLog $ Text.pack $ "renderValue for output took: " <> show (diffUTCTime t1 t0)
                           Left (e :: Exception.SomeException) -> consoleLog ("TRY NORMALIZE FAILURE: " <> Text.pack (show e))
                       Left err -> do
                         consoleLog "TRY FAILURE"
@@ -516,7 +515,6 @@ renderValue _ parent _ value = do
 
 renderDefault :: JSVal -> Value -> IO ()
 renderDefault parent value = do
-    consoleLog "renderDefault"
     code <- createElement "code"
 
     setTextContent code (valueToText value)
@@ -605,23 +603,15 @@ renderInput _ Type.Scalar{ scalar = Monotype.Natural } = do
     return (input, get)
 
 renderInput _ Type.Scalar { scalar = Monotype.Image } = do
-  consoleLog "renderInput for Image"
   input <- createElement "input"
 
-  -- consoleLog "about to setAttribute for input"
   setAttribute input "type" "file"
   setAttribute input "accept" ".jpeg,.jpg" -- TODO: For now, only accept jpeg images.
                                            -- This invariant comes from core Grace Image monotype.
-  consoleLog "finished setAttribute for input"
-
-  consoleLog "about to define get for image"
   let get = do
-        -- consoleLog "get for Image input"
         imgBytes <- Maybe.fromMaybe "http://localhost:8004/cat_small.jpg" <$> toImageValue input
-        -- consoleLog "finished toImageValue"
         return (Value.Scalar (Syntax.Image imgBytes))
 
-  consoleLog "finishing renderInput for Image"
   return (input, get)
 
 renderInput _ Type.Scalar{ scalar = Monotype.JSON } = do
@@ -648,7 +638,6 @@ renderInput _ Type.Scalar{ scalar = Monotype.JSON } = do
     return (input, get)
 
 renderInput _ Type.Scalar{ scalar = Monotype.Text } = do
-    liftIO $ putStrLn "renderInput Text"
     textarea <- createElement "textarea"
 
     let get = do
@@ -943,7 +932,6 @@ renderInput ref Type.Tensor{ type_ } = do
     return (ul, get)
 
 renderInput _ _ = do
-    -- consoleLog "No method for rendering this type"
     empty
 
 data DebounceStatus = Ready | Lock | Running (Async ())
@@ -985,7 +973,6 @@ setInfo msg = do
 
 main :: IO ()
 main = do
-    putStrLn "MAIN"
     input         <- getElementById "input"
     output        <- getElementById "output"
     error         <- getElementById "error"
@@ -1022,7 +1009,6 @@ main = do
             setDisplay error  "block"
 
     let setOutput type_ value = do
-            -- consoleLog ("RENDER " <> valueToText value <> " : " <> typeToText type_)
             renderValue counter output type_ value
 
             typeSpan <- createElement "span"
