@@ -22,6 +22,7 @@ import Data.Foldable (toList)
 import Debug.Trace (trace, traceShowId)
 import Grace.Location (Location)
 import Grace.Infer (typeOf)
+import qualified Data.Vector as Vector
 import Grace.Image (Img(..), imageToTensor, imageFromTensor)
 import Grace.Syntax (Builtin(..), Scalar(..), Syntax)
 import Grace.Type (Type(..))
@@ -40,9 +41,9 @@ import qualified Data.Text as Text
 import qualified Grace.Syntax as Syntax
 import qualified Grace.Value as Value
 
-import Data.JSString (JSString)
-import qualified Data.JSString as JSString
-import qualified Data.JSString.Text as JSString
+-- import Data.JSString (JSString)
+-- import qualified Data.JSString as JSString
+-- import qualified Data.JSString.Text as JSString
 
 {- $setup
 
@@ -263,13 +264,7 @@ evaluate type_ env syntax =
             value
 
         Syntax.Tensor{..} ->
-          let
-            normalizeElements xs = concatMap normalizeElement xs
-            normalizeElement x = case x of
-              Syntax.Scalar {} -> [evaluate type_ env x]
-              Syntax.List { elements = xs } -> normalizeElements xs
-          in
-            Value.Tensor shape (Seq.fromList $ normalizeElements elements)
+          Value.Tensor shape tensorElements
 
         Syntax.TritonCall{..} -> Value.TritonCall modelName
 
@@ -354,16 +349,19 @@ apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.
     Left err -> error err
     Right ((width, height), elements) ->
       let
-        tensorElements = (\v -> Value.Scalar (Syntax.Real $ realToFrac v)) <$> elements
+        tensorElements = Value.TensorFloatElements $ Vector.fromList elements
         newShape = case shape of
           [-1,-1,-1,3] -> [1,height, width, 3]
           [1,3,_,_] -> [1,3, height, width]
           _ -> error $ "Don't know what to do to normalize this shape: " <> show shape
-      in Value.Tensor (trace (show newShape) $ TensorShape newShape) (Seq.fromList tensorElements)
+      in Value.Tensor (TensorShape newShape) tensorElements
 apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (TensorShape runtimeShape) elements) resultType =
   let
-    floatElements = (\(Value.Scalar (Syntax.Real v)) -> realToFrac v) <$> elements
-    Img img = imageFromTensor runtimeShape (Foldable.toList floatElements)
+    floatElements =
+      case elements of
+        Value.TensorFloatElements floats -> Vector.toList floats
+        Value.TensorIntElements int -> error "TODO: handle the int tensor case"
+    Img img = imageFromTensor runtimeShape floatElements
   in
     Value.Scalar (Syntax.Image img)
 apply (Value.Builtin ListIndexed) (Value.List elements) _ =
@@ -429,11 +427,11 @@ apply (Value.Builtin TensorFromList) (Value.List xs) type_ =
         expectedLength = List.foldl' (*) 1 dims
       in
         if expectedLength == length xs
-        then Value.Tensor (TensorShape dims) xs
+        then Value.Tensor (TensorShape dims) undefined -- TODO: Fix this
         else error "Dimension mismatch"
     _ -> error $ "Impossible case, application does not results in not a tensor: " <> Text.unpack (renderStrict True 50 type_)
 apply (Value.Builtin TensorToList) (Value.Tensor _ xs) _ =
-  Value.List xs
+  undefined -- TODO: Fix this.
 apply
     (Value.Application (Value.Builtin TextEqual) (Value.Scalar (Text l)))
     (Value.Scalar (Text r)) _ =
@@ -571,24 +569,19 @@ quote names value =
         Value.Builtin builtin ->
             Syntax.Builtin{..}
 
-        Value.Tensor _ elements ->
-            Syntax.Application
-                { function = Syntax.Builtin { builtin = Syntax.TensorFromList, .. }
-                , argument = Syntax.List
-                  { elements = fmap (quote names) elements, .. }
-                , ..}
-            -- Syntax.Tensor { elements = fmap  (quote names) elements, .. }
+        Value.Tensor shape tensorElements ->
+          Syntax.Tensor {..}
 
         Value.TritonCall name ->
           Syntax.Variable { index = 0, .. }
   where
     location = ()
 
-foreign import javascript unsafe "console.log($1)"
-  consoleLog_ :: JSString -> IO ()
+-- foreign import javascript unsafe "console.log($1)"
+--   consoleLog_ :: JSString -> IO ()
 
-consoleLog :: Text -> IO ()
-consoleLog = consoleLog_ . JSString.pack . Text.unpack
-
-dbg :: Text -> a -> a
-dbg t a = seq (unsafePerformIO $ consoleLog t) a
+-- consoleLog :: Text -> IO ()
+-- consoleLog = consoleLog_ . JSString.pack . Text.unpack
+--
+-- dbg :: Text -> a -> a
+-- dbg t a = seq (unsafePerformIO $ consoleLog t) a

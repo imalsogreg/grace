@@ -16,6 +16,7 @@ import Data.ByteString.Lazy( fromStrict, toStrict )
 import Data.Traversable (forM)
 import qualified Data.HashMap.Strict.InsOrd as InsOrdHashMap
 import Data.Sequence (fromList)
+import qualified Data.Vector as Vector
 import Data.Scientific (Scientific)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text (Text, unpack)
@@ -92,23 +93,24 @@ reifyIntElement v = GraceValue.Scalar (GraceSyntax.Integer (round v))
 lowerTensorValue :: Text -> GraceValue.Value -> TritonTensor
 lowerTensorValue inputTensorName t = case t of
   GraceValue.Tensor (Monotype.TensorShape shape) elements ->
+    let (datatype, data_) =
+          case elements of
+            GraceValue.TensorIntElements ints -> (INT64, data_)
+            GraceValue.TensorFloatElements floats -> (FP32, data_)
+            in
     TritonTensor { tensorName = inputTensorName
-                  , datatype = FP32
+                  , datatype
                   , shape = shape
-                  , data_ = concat $ toList $ lowerElements <$> (elements)
+                  , data_ -- = concat $ toList $ lowerElements <$> (elements)
                   }
   _ -> error "TODO: should have passed a grace Tensor value"
 
 -- | Helper functions for normalizaTritonCallApplication
 reifyTritonTensor :: TritonTensor -> GraceValue.Value
 reifyTritonTensor TritonTensor { data_, datatype, shape } =
-  let
-    reifiedValues :: [GraceValue.Value]
-    reifiedValues = case datatype of
-        FP32 -> fmap reifyFloatElement data_
-        INT64 -> fmap reifyIntElement data_
-  in
-  GraceValue.Tensor (Monotype.TensorShape shape) $ fromList reifiedValues
+  case datatype of
+    FP32 -> GraceValue.Tensor (Monotype.TensorShape shape) $ GraceValue.TensorFloatElements $ Vector.fromList (realToFrac <$> data_)
+    INT64 -> GraceValue.Tensor (Monotype.TensorShape shape) $ GraceValue.TensorIntElements $ Vector.fromList (round <$> data_)
 
 
 tritonPrimitivesForModel :: ModelMetadata -> (Text, GraceType.Type Location, GraceValue.Value)

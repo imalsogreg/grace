@@ -7,17 +7,19 @@ module Grace.Value
     ( -- * Value
       Closure(..)
     , Value(..)
+    , TensorElements(..)
     ) where
 
 import Data.Aeson (FromJSON(..))
 import Data.Foldable (toList)
+import Data.Vector (Vector)
 import Data.HashMap.Strict.InsOrd (InsOrdHashMap)
 import Data.Sequence (Seq)
 import Data.String (IsString(..))
 import Data.Text (Text)
 import Grace.Location (Location)
 import qualified Grace.Monotype as Monotype
-import Grace.Syntax (Builtin, Operator, Scalar, Syntax)
+import Grace.Syntax (Builtin, Operator, Scalar, Syntax, TensorElements(..))
 import Grace.Type (Type)
 
 import qualified Data.Aeson as Aeson
@@ -97,7 +99,7 @@ data Value
     | Builtin Builtin
     | Scalar Scalar
     | Operator Value Operator Value
-    | Tensor Monotype.TensorShape (Seq Value)
+    | Tensor Monotype.TensorShape TensorElements
     | TritonCall Text
     deriving stock (Eq, Show)
 

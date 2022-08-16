@@ -21,12 +21,15 @@ module Grace.Syntax
     , Operator(..)
     , Builtin(..)
     , Binding(..)
+    , TensorElements(..)
     ) where
 
 import Control.Lens (Plated(..))
 import Data.Bifunctor (Bifunctor(..))
+import qualified Data.Vector as Vector
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Scientific (Scientific)
+import Data.Vector (Vector)
 import Data.Sequence (Seq((:<|)))
 import Data.String (IsString(..))
 import Data.String.Interpolate ()  -- For an orphan instance for Lift (Seq a)
@@ -114,9 +117,15 @@ data Syntax s a
     --   x + y
     | Builtin { location :: s, builtin :: Builtin }
     | Embed { location :: s, embedded :: a }
-    | Tensor { location :: s, shape :: Monotype.TensorShape, elements :: Seq (Syntax s a) } -- TODO Should this be an Array, not Seq?
+    | Tensor { location :: s, shape :: Monotype.TensorShape, tensorElements :: TensorElements }
     | TritonCall { location :: s, modelName :: Text }
     deriving stock (Eq, Foldable, Functor, Generic, Lift, Show, Traversable)
+
+
+data TensorElements
+  = TensorIntElements (Vector Int)
+  | TensorFloatElements (Vector Float)
+  deriving stock (Eq, Show, Generic, Lift)
 
 instance Plated (Syntax s a) where
     plate onSyntax syntax =
@@ -173,9 +182,8 @@ instance Plated (Syntax s a) where
                 pure Builtin{..}
             Embed{..} -> do
                 pure Embed{..}
-            Tensor{ elements = oldElements, .. } -> do
-                newElements <- traverse onSyntax oldElements
-                return Tensor{ elements = newElements, .. }
+            Tensor{ .. } -> do
+                pure Tensor{..}
             TritonCall {..} -> do
               pure TritonCall{..}
 
@@ -213,7 +221,7 @@ instance Bifunctor Syntax where
     first f Embed{..} =
         Embed{ location = f location, .. }
     first f Tensor{..} =
-        Tensor{ location = f location, elements = fmap (first f) elements, .. }
+        Tensor{ location = f location, .. }
     first f TritonCall{..} =
         TritonCall { location = f location, .. }
 
@@ -225,6 +233,11 @@ instance IsString (Syntax () a) where
 
 instance Pretty a => Pretty (Syntax s a) where
     pretty = prettyExpression
+
+-- TODO: This is not a very good pretty instance.
+instance Pretty TensorElements where
+  pretty (TensorIntElements ints) = Pretty.prettyList (Vector.toList ints)
+  pretty (TensorFloatElements floats) = Pretty.prettyList (Vector.toList floats)
 
 -- | A scalar value
 data Scalar
@@ -647,9 +660,8 @@ prettyPrimitiveExpression Variable{..}
     | otherwise  = label (pretty name) <> "@" <> Pretty.scalar (pretty index)
 prettyPrimitiveExpression Alternative{..} =
     Type.prettyAlternativeLabel name
-prettyPrimitiveExpression Tensor{ .. } =
-    let list = List {..} in
-    "Tensor " <> prettyPrimitiveExpression list
+prettyPrimitiveExpression Tensor{ .. } = -- TODO, print the elements in the tensor.
+    "Tensor"
 prettyPrimitiveExpression List{ elements = [] } =
     punctuation "[" <> " " <> punctuation "]"
 prettyPrimitiveExpression List{ elements = element :<| elements } =

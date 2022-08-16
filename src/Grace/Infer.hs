@@ -1394,54 +1394,18 @@ infer e0 = do
                     return Type.List{..}
 
         Syntax.Tensor{..} -> do
-
-            let -- aux :: Monad m => Seq.Seq (Syntax Location (Type Location, Value)) -> [Type Location] -> m (Type Location, [Int])
-                aux elems accBaseTypes = case Seq.viewl elems of
-                  EmptyL -> error "TODO: type error for empty tensors"
-                  y :< _ys -> do
-                    (yElementType, yShape) <- syntaxes accBaseTypes y
-                    -- TODO: Check that all peers are consistent in shape and type.
-                    -- ysShapesAndTypes <- traverse (syntaxes accBaseTypes) ys
-                    return $
-                      if True -- (all (\(type_, shape ) -> trace ("yShape: " <> show yShape) yShape == shape && trace ("yType: " <> show yElementType) yElementType == type_) (trace ("ys: " <> show ysShapesAndTypes) ysShapesAndTypes))
-                      then (yElementType, length elems : yShape)
-                      else error "TODO: unequal child shapes"
-
-                -- syntaxes :: MonadState Status m => Syntax Location (Type Location, Value) -> m ((Maybe (Type Location), [Int]))
-                syntaxes accBaseTypes syn = case syn of
-                  Syntax.Scalar {} -> (,) <$> infer syn <*> pure []
-                  Syntax.List { elements = list_elements } -> aux list_elements accBaseTypes
-                  _ -> error "TODO: Inference error for non-tensory children"
-
-                    
-            (type_, tensorShape) <- aux elements []
+            let type_ =
+                  case tensorElements of
+                    Syntax.TensorIntElements _ -> Type.Scalar { scalar = Monotype.Integer, .. }
+                    Syntax.TensorFloatElements _ -> Type.Scalar { scalar = Monotype.Real, .. }
+            -- (type_, tensorShape) <- aux elements []
             return $ Type.Tensor {
               shape = Type.Shape {
-                  tensorShape = Monotype.TensorShape tensorShape,
+                  tensorShape = shape,
                   ..
                   }
               , ..
               }
-                    
-            -- existentialShape <- fresh
-            -- case Seq.viewl elements of
-            --     EmptyL -> do
-            --         existential <- fresh
-
-            --         push (Context.UnsolvedType existential)
-
-            --         return Type.Tensor{ type_ = Type.UnsolvedType{..}, shape = Type.UnsolvedType{ existential = existentialShape, .. }, ..} 
-            --     y :< ys -> do
-            --         type_ <- infer y
-
-            --         let process element = do
-            --                 _Γ <- get
-
-            --                 check element (Context.solveType _Γ type_)
-
-            --         traverse_ process ys
-
-            --         return Type.Tensor{ shape = Type.UnsolvedType{ existential = existentialShape, .. }, ..}
 
         Syntax.Record{..} -> do
             let process (field, value) = do
