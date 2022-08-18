@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -41,9 +42,11 @@ import qualified Data.Text as Text
 import qualified Grace.Syntax as Syntax
 import qualified Grace.Value as Value
 
--- import Data.JSString (JSString)
--- import qualified Data.JSString as JSString
--- import qualified Data.JSString.Text as JSString
+#ifdef ghcjs_HOST_OS
+import Data.JSString (JSString)
+import qualified Data.JSString as JSString
+import qualified Data.JSString.Text as JSString
+#endif
 
 {- $setup
 
@@ -346,16 +349,18 @@ apply
             y :< ys -> loop ys (apply (apply cons y type_) result type_) -- TODO: I'm not sure if type_ is right here.
 apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.Image imageBytes)) resultType =
   case imageToTensor (Img imageBytes) shape of
-    Left err -> error err
+    Left err -> dbg "unhappy imageToTensor" $ error err
     Right ((width, height), elements) ->
       let
         tensorElements = Value.TensorFloatElements $ Vector.fromList elements
         newShape = case shape of
           [-1,-1,-1,3] -> [1,height, width, 3]
+          [1,1,_,_] -> [1,1, height, width]
           [1,3,_,_] -> [1,3, height, width]
-          _ -> error $ "Don't know what to do to normalize this shape: " <> show shape
-      in Value.Tensor (TensorShape newShape) tensorElements
+          _ -> dbg "bad shape swizzle" $ error ("Don't know what to do to normalize this shape: " <> show shape)
+      in dbg "imageToTensor happy" $ Value.Tensor (TensorShape newShape) tensorElements
 apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (TensorShape runtimeShape) elements) resultType =
+  dbg "apply ImageFromTensor to tensor" $
   let
     floatElements =
       case elements of
@@ -364,6 +369,8 @@ apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (Ten
     Img img = imageFromTensor runtimeShape floatElements
   in
     Value.Scalar (Syntax.Image img)
+apply fun@(Value.Builtin (ImageFromTensor s)) x resultType =
+  dbg' "apply ImageFromTensor to unknown value: " x $ Value.Application fun x
 apply (Value.Builtin ListIndexed) (Value.List elements) _ =
     Value.List (Seq.mapWithIndex adapt elements)
   where
@@ -431,7 +438,9 @@ apply (Value.Builtin TensorFromList) (Value.List xs) type_ =
         else error "Dimension mismatch"
     _ -> error $ "Impossible case, application does not results in not a tensor: " <> Text.unpack (renderStrict True 50 type_)
 apply (Value.Builtin TensorToList) (Value.Tensor _ xs) _ =
-  undefined -- TODO: Fix this.
+  case xs of
+    Value.TensorIntElements ints -> Value.List (Seq.fromList $ (\x -> Value.Scalar (Syntax.Integer (fromIntegral x))) <$> Vector.toList ints)
+    Value.TensorFloatElements floats -> Value.List (Seq.fromList $ (\x -> Value.Scalar (Syntax.Real (realToFrac x))) <$> Vector.toList floats)
 apply
     (Value.Application (Value.Builtin TextEqual) (Value.Scalar (Text l)))
     (Value.Scalar (Text r)) _ =
@@ -577,11 +586,27 @@ quote names value =
   where
     location = ()
 
--- foreign import javascript unsafe "console.log($1)"
---   consoleLog_ :: JSString -> IO ()
+#ifdef ghcjs_HOST_OS
+foreign import javascript unsafe "console.log($1)"
+  consoleLog_ :: JSString -> IO ()
 
--- consoleLog :: Text -> IO ()
--- consoleLog = consoleLog_ . JSString.pack . Text.unpack
---
--- dbg :: Text -> a -> a
--- dbg t a = seq (unsafePerformIO $ consoleLog t) a
+consoleLog :: Text -> IO ()
+consoleLog = consoleLog_ . JSString.pack . Text.unpack
+
+dbg :: Text -> a -> a
+dbg t a = seq (unsafePerformIO $ consoleLog t) a
+
+dbg' :: Show a => Text -> a -> b -> b
+dbg' prefix val x =
+  seq (unsafePerformIO (consoleLog (prefix <> Text.pack (show val)))) x
+#else
+consoleLog :: Text -> IO ()
+consoleLog = putStrLn . Text.unpack
+
+dbg :: Text -> a -> a
+dbg t a = seq (unsafePerformIO $ consoleLog t) a
+
+dbg' :: Show a => Text -> a -> b -> b
+dbg' prefix val x =
+  seq (unsafePerformIO (consoleLog (prefix <> Text.pack (show val)))) x
+#endif

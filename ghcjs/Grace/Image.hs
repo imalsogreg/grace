@@ -5,6 +5,8 @@
 
 module Grace.Image where
 
+import qualified Control.Concurrent.MVar as MVar
+import Control.Concurrent (forkIO)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Unsafe.Coerce (unsafeCoerce)
 import qualified Control.Concurrent as Concurrent
@@ -15,6 +17,7 @@ import qualified Data.Maybe as Maybe
 import Data.JSString (JSString)
 import qualified Data.JSString as JSString
 import GHCJS.Marshal (fromJSVal, toJSVal)
+import GHCJS.Foreign.Callback (Callback, asyncCallback)
 import qualified JavaScript.TypedArray as TypedArray
 import Data.Text (Text)
 import System.IO.Unsafe (unsafePerformIO)
@@ -32,6 +35,9 @@ foreign import javascript unsafe "console.log($1)"
 consoleLog :: MonadIO io => Text -> io ()
 consoleLog t = liftIO . consoleLog_ . JSString.pack $ Text.unpack t
 
+consoleShow :: Show a => Text -> a -> IO ()
+consoleShow prefix x = consoleLog $ prefix <> " " <> Text.pack (show x)
+
 -- foreign import javascript unsafe "$r = new Array(); for (chan of [1,2,3]) { for (r of Array($1).keys()) { for (c of Array(2).keys()) { i = c*4 + r * $1 * 4 + chan; $r.push($3[i/255.0]); }  } }"
 --     imageDataToChannelMajorTensor_ :: Int -> Int -> JSVal -> IO JSVal
 
@@ -44,6 +50,9 @@ foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r 
 
 foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c * 3 + r * $3 * 3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i+1] * 255; d[j+2] = ($2)[i+2] * 255; d[j+3] = 255; }}; iData.data = d; ctx.putImageData(iData,0,0);"
   drawTensorToCanvas :: Canvas.Canvas -> JSVal -> Int -> Int -> IO ()
+
+foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c  + r * $3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i] * 255; d[j+2] = ($2)[i] * 255; d[j+3] = 255; }}; iData.data = d; ctx.putImageData(iData,0,0);"
+  drawMonochromeTensorToCanvas :: Canvas.Canvas -> JSVal -> Int -> Int -> IO ()
 
 -- imageDataToChannelMajorTensor :: TypedArray.Uint8ClampedArray -> Int -> Int -> IO [Float]
 -- imageDataToChannelMajorTensor arr width height = do
@@ -84,7 +93,10 @@ imageToTensor img@(Img {base64Image}) [1,1,nRows,nCols] =
 imageToTensor img@(Img {base64Image}) [-1,-1,-1,3] =
   unsafePerformIO $ do
     t0 <- getCurrentTime
+    consoleLog "about to canvasWithImageNativeSize"
     (canvas, width, height) <- canvasWithImageNativeSize img
+    consoleShow "width:" width
+    consoleShow "height:" height
     imageData <- canvasImageDataNativeSize canvas
     tensorVals <- imageDataToPixelMajorTensor_ imageData
     Just v <- fromJSVal tensorVals
@@ -99,11 +111,22 @@ imageFromTensor :: [Int] ->[Float] ->  Img
 -- Pixel-major rgb. 
 imageFromTensor [_,nRows,nCols,3] rgbValues =
   unsafePerformIO $ do
+    consoleLog "imageFromTensor"
     jsValues <- toJSVal rgbValues
     canvas <- Canvas.create nCols nRows
-    appendChild_ canvas -- TODO: temporary, debugging
+    -- appendChild_ canvas -- TODO: temporary, debugging
     drawTensorToCanvas canvas jsValues nCols nRows
     Img <$> toDataUrl canvas
+imageFromTensor [1,1,nRows,nCols] monochromeValues =
+  unsafePerformIO $ do
+    jsValues <- toJSVal monochromeValues
+    canvas <- Canvas.create nCols nRows
+    drawMonochromeTensorToCanvas canvas jsValues nCols nRows
+    Img <$> toDataUrl canvas
+imageFromTensor shape monochromeValues =
+  unsafePerformIO $ do
+    consoleLog (Text.pack $ "Don't know how to get image from tensor shape " <> show shape)
+    undefined
 
 foreign import javascript unsafe "$1.toDataURL('image/jpeg', 0.5)"
     toDataUrl_ :: Canvas.Canvas -> IO JSString
@@ -120,19 +143,34 @@ resizeImage :: Img -> IO Img
 resizeImage (Img base64Bytes) = do
   undefined
 
+foreign import javascript unsafe "$1.addEventListener('load', $2, false)"
+  onLoad_ :: Canvas.Image -> Callback (IO ()) -> IO ()
+
 canvasWithImage :: Int -> Int -> Img -> IO Canvas.Canvas
 canvasWithImage width height img = liftIO $ do
+  imgReady <- MVar.newEmptyMVar
   canvas <- Canvas.create width height
   imgJs <- createImage img
-  Concurrent.threadDelay 500000
+  callback <- asyncCallback $ do
+    consoleLog "fixedsize: callback about to put mvar ()"
+    MVar.putMVar imgReady ()
+  consoleLog "waiting for mvar"
+  onLoad_ imgJs callback
+  () <- MVar.takeMVar imgReady
   ctx <- Canvas.getContext canvas
   Canvas.drawImage imgJs 0 0 width height ctx
   return canvas
 
 canvasWithImageNativeSize :: Img -> IO (Canvas.Canvas, Int, Int)
 canvasWithImageNativeSize img = liftIO $ do
+  imgReady <- MVar.newEmptyMVar
+  callback <- asyncCallback $ do
+    consoleLog "nativesize: callback about to put mvar ()"
+    MVar.putMVar imgReady ()
   imgJs <- createImage img
-  Concurrent.threadDelay 500000
+  consoleLog "waiting for mvar"
+  onLoad_ imgJs callback
+  () <- MVar.takeMVar imgReady
   width <- imgWidth_ imgJs
   height <- imgHeight_ imgJs
   canvas <- Canvas.create width height

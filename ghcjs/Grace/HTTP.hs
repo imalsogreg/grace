@@ -16,6 +16,7 @@ module Grace.HTTP
 import Control.Exception (Exception(..))
 import Data.Text (Text)
 import GHCJS.Fetch (Request(..), JSPromiseException)
+import Data.JSString (JSString)
 import GHCJS.Marshal (toJSVal)
 import GHCJS.Marshal.Pure (pToJSVal)
 
@@ -75,11 +76,20 @@ fetchWithBody _manager url requestBody = do
                                                  , Fetch.reqOptBody = Just reqBodyJSString
                                                  }
             }
+    consoleLog ("about to fetch")
     resp <- Fetch.fetch request
     jsString <- Fetch.responseText resp
+    consoleLog ("finished fetch")
     return (Text.pack (JSString.unpack jsString))
 
 
 -- | Render an `HttpException` as `Text`
 renderError :: HttpException -> Text
 renderError = Text.pack . displayException
+
+
+consoleLog :: Text -> IO ()
+consoleLog t = consoleLog_ (JSString.pack $ Text.unpack t)
+
+foreign import javascript unsafe "console.log($1)"
+  consoleLog_ :: JSString -> IO ()

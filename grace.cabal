@@ -110,6 +110,7 @@ executable try-grace
                      , time
                      , transformers
                      , uri-encode
+                     , vector
 
   hs-source-dirs:      try-grace
 

@@ -20,6 +20,7 @@ import Data.IORef (IORef)
 import Data.JSString (JSString)
 import Data.Text (Text)
 import Data.Traversable (forM)
+import qualified Data.Vector as Vector
 import Grace.Type (Type(..))
 import GHCJS.Foreign.Callback (Callback)
 import GHCJS.Types (JSVal)
@@ -357,7 +358,9 @@ renderValue _ parent _ (Value.Scalar (Syntax.Image imageInner)) = do
 
 renderValue _ parent type_ value@Value.Tensor{} = do
   span <- createElement "span"
+  consoleLog "about to typeToText tensor"
   setTextContent span (typeToText type_)
+  consoleLog "finished typeToText tensor"
   replaceChild parent span
 
 renderValue _ parent type_ value@Value.Scalar{} = do
@@ -481,10 +484,17 @@ renderValue ref parent Type.Function{ input, output } function = do
                       Right value -> do
                         -- valText <- Exception.catch (Exception.evaluate $ valueToText value)
                         --     (\(e::  Exception.SomeException) -> consoleLog ("valueToText error: " <> Text.pack (show e)) >> pure "ERROR")
+                        consoleLog (Text.pack $ "invoke evaluated result: " <> show value)
                         typeText <- Exception.catch (Exception.evaluate $ typeToText output)
                             (\(e:: Exception.SomeException) -> consoleLog ("typeToText error: " <> Text.pack (show e)) >> pure "ERROR")
                         t0 <- getCurrentTime
+                        consoleLog "Computing output"
+                        consoleLog "Apply:"
+                        consoleLog $ Text.pack $ "fn: " <> show function
+                        consoleLog $ Text.pack $ "value: " <> show value
+                        consoleLog $ Text.pack $ "outpu: " <> show output
                         outputValue <- Exception.try $ Exception.evaluate $ Normalize.apply function value output
+                        consoleLog $ Text.pack $ "Computed result: " <> show outputValue
                         t1 <- getCurrentTime
                         consoleLog $ Text.pack $ "Normalize took: " <> show (diffUTCTime t1 t0)
                         case outputValue of
@@ -609,7 +619,7 @@ renderInput _ Type.Scalar { scalar = Monotype.Image } = do
   setAttribute input "accept" ".jpeg,.jpg" -- TODO: For now, only accept jpeg images.
                                            -- This invariant comes from core Grace Image monotype.
   let get = do
-        imgBytes <- Maybe.fromMaybe "http://localhost:8004/cat_small.jpg" <$> toImageValue input
+        imgBytes <- Maybe.fromMaybe "http://localhost:8004/cat.jpg" <$> toImageValue input
         return (Value.Scalar (Syntax.Image imgBytes))
 
   return (input, get)
@@ -924,10 +934,10 @@ renderInput ref Type.Tensor{ type_ } = do
 
             values <- sequence (IntMap.elems m)
 
-            Monad.when (null values) $ Prelude.error "No values"
+            -- Monad.when (null values) $ Prelude.error "No values"
 
             -- TODO: Fix, the tensor shape is totally wrong.
-            return (Value.Tensor (Monotype.TensorShape [1]) (Seq.fromList values))
+            return (Value.Tensor (Monotype.TensorShape [1]) (Syntax.TensorFloatElements $ Vector.fromList []))
 
     return (ul, get)
 
