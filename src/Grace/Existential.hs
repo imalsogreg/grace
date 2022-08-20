@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveLift                 #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -16,7 +17,9 @@ module Grace.Existential
     , toVariable
     ) where
 
+import Control.DeepSeq (NFData)
 import Data.Text (Text)
+import GHC.Generics
 import Grace.Pretty (Pretty(..), label)
 import Language.Haskell.TH.Syntax (Lift)
 
@@ -34,8 +37,10 @@ import qualified Data.Text as Text
       variable
 -}
 newtype Existential a = UnsafeExistential Int
-    deriving stock Lift
+    deriving stock (Lift, Generic)
     deriving newtype (Eq, Num, Show)
+
+instance NFData (Existential a)
 
 instance Pretty (Existential a) where
     pretty x = label (pretty (toVariable x))

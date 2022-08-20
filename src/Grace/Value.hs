@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 {-| This module contains the `Value` type used internally for efficient
     evaluation of expressions
@@ -14,6 +15,8 @@ import Data.Aeson (FromJSON(..))
 import Data.Foldable (toList)
 import Data.Vector (Vector)
 import Data.HashMap.Strict.InsOrd (InsOrdHashMap)
+import GHC.Generics
+import Control.DeepSeq (NFData)
 import Data.Sequence (Seq)
 import Data.String (IsString(..))
 import Data.Text (Text)
@@ -40,7 +43,9 @@ import qualified Grace.Syntax as Syntax
 -}
 data Closure =
     Closure Text [(Text, Value)] (Syntax Location (Type Location, Value))
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Generic, Show)
+
+instance NFData Closure
 
 {-| This type represents a fully evaluated expression with no reducible
     sub-expressions
@@ -101,7 +106,9 @@ data Value
     | Operator Value Operator Value
     | Tensor Monotype.TensorShape TensorElements
     | TritonCall Text
-    deriving stock (Eq, Show)
+    deriving stock (Generic, Eq, Show)
+
+instance NFData Value
 
 instance IsString Value where
     fromString string = Variable (fromString string) 0

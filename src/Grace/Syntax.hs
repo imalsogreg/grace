@@ -25,6 +25,7 @@ module Grace.Syntax
     ) where
 
 import Control.Lens (Plated(..))
+import Control.DeepSeq (NFData)
 import Data.Bifunctor (Bifunctor(..))
 import qualified Data.Vector as Vector
 import Data.List.NonEmpty (NonEmpty(..))
@@ -121,11 +122,15 @@ data Syntax s a
     | TritonCall { location :: s, modelName :: Text }
     deriving stock (Eq, Foldable, Functor, Generic, Lift, Show, Traversable)
 
+instance (NFData s, NFData a) => NFData (Syntax s a)
+
 
 data TensorElements
   = TensorIntElements (Vector Int)
   | TensorFloatElements (Vector Float)
   deriving stock (Eq, Show, Generic, Lift)
+
+instance NFData TensorElements
 
 instance Plated (Syntax s a) where
     plate onSyntax syntax =
@@ -273,6 +278,8 @@ data Scalar
     --   null
     deriving (Eq, Generic, Lift, Show)
 
+instance NFData Scalar
+
 instance Pretty Scalar where
     pretty (Bool True )     = Pretty.scalar "true"
     pretty (Bool False)     = Pretty.scalar "false"
@@ -302,6 +309,8 @@ data Operator
     --   >>> pretty Times
     --   *
     deriving (Eq, Generic, Lift, Show)
+
+instance NFData Operator
 
 instance Pretty Operator where
     pretty And    = Pretty.operator "&&"
@@ -408,6 +417,8 @@ data Builtin
     | TensorFromList
     | TensorToList
     deriving (Eq, Generic, Lift, Show)
+
+instance NFData Builtin
 
 instance Pretty Builtin where
     pretty RealEqual      = Pretty.builtin "Real/equal"
@@ -750,6 +761,8 @@ data Binding s a = Binding
     , annotation :: Maybe (Type s)
     , assignment :: Syntax s a
     } deriving stock (Eq, Foldable, Functor, Generic, Lift, Show, Traversable)
+
+instance (NFData s, NFData a) => NFData (Binding s a)
 
 instance Bifunctor Binding where
     first f Binding{ nameLocation, annotation, assignment, .. } =

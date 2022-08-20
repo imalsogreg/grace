@@ -11,6 +11,7 @@ module Grace.Domain
       Domain(..)
     ) where
 
+import Control.DeepSeq (NFData)
 import GHC.Generics (Generic)
 import Grace.Pretty (Pretty(..), builtin)
 import Language.Haskell.TH.Syntax (Lift)
@@ -24,6 +25,8 @@ data Domain
     | Alternatives
     -- ^ @forall (a : Alternatives) . …@
     deriving stock (Eq, Generic, Lift, Show)
+
+instance NFData Domain
 
 instance Pretty Domain where
     pretty Type         = builtin "Type"

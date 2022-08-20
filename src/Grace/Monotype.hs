@@ -19,6 +19,7 @@ module Grace.Monotype
     ) where
 
 import Data.String (IsString(..))
+import Control.DeepSeq (NFData)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Grace.Existential (Existential)
@@ -42,6 +43,8 @@ data Monotype
     | Shape TensorShape
     | Tensor Monotype Monotype
     deriving stock (Eq, Generic, Show)
+
+instance NFData Monotype
 
 instance IsString Monotype where
     fromString string = VariableType (fromString string)
@@ -85,6 +88,8 @@ data Scalar
     -- Image
     deriving stock (Eq, Generic, Lift, Show)
 
+instance NFData Scalar
+
 instance Pretty Scalar where
     pretty Bool    = builtin "Bool"
     pretty Real    = builtin "Real"
@@ -101,6 +106,8 @@ instance Pretty TensorShape where
 data Record = Fields [(Text, Monotype)] RemainingFields
     deriving stock (Eq, Generic, Show)
 
+instance NFData Record
+
 -- | This represents whether or not the record type is open or closed
 data RemainingFields
     = EmptyFields
@@ -114,9 +121,13 @@ data RemainingFields
     --   variable an explicit name in the source code
     deriving stock (Eq, Generic, Lift, Show)
 
+instance NFData RemainingFields
+
 -- | A monomorphic union type
 data Union = Alternatives [(Text, Monotype)] RemainingAlternatives
     deriving stock (Eq, Generic, Show)
+
+instance NFData Union
 
 -- | This represents whether or not the union type is open or closed
 data RemainingAlternatives
@@ -131,5 +142,9 @@ data RemainingAlternatives
     --   alternatives variable an explicit name in the source code
     deriving stock (Eq, Generic, Lift, Show)
 
+instance NFData RemainingAlternatives
+
 newtype TensorShape = TensorShape [Int]
   deriving stock (Eq, Generic, Lift, Show)
+
+instance NFData TensorShape

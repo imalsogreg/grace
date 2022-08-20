@@ -36,6 +36,7 @@ module Grace.Type
     , prettyTextLiteral
     ) where
 
+import Control.DeepSeq (NFData)
 import Control.Lens (Plated(..))
 import Data.Bifunctor (Bifunctor(..))
 import Data.Generics.Product (the)
@@ -126,6 +127,8 @@ data Type s
     | Tensor { location :: s, shape :: Type s, type_ :: Type s }
     deriving stock (Eq, Functor, Generic, Lift, Show)
 
+instance NFData s => NFData (Type s)
+
 instance IsString (Type ()) where
     fromString string = VariableType{ name = fromString string, location = () }
 
@@ -180,12 +183,16 @@ instance Plated (Type s) where
 data Record s = Fields [(Text, Type s)] RemainingFields
     deriving stock (Eq, Functor, Generic, Lift, Show)
 
+instance NFData s => NFData (Record s)
+
 instance Pretty (Record s) where
     pretty = prettyRecordType
 
 -- | A potentially polymorphic union type
 data Union s = Alternatives [(Text, Type s)] RemainingAlternatives
     deriving stock (Eq, Functor, Generic, Lift, Show)
+
+instance NFData s => NFData (Union s)
 
 instance Pretty (Union s) where
     pretty = prettyUnionType

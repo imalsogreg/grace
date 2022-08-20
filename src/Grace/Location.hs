@@ -1,7 +1,9 @@
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-| This module contains the `Location` type used for attaching source code to
     error messages
@@ -13,7 +15,9 @@ module Grace.Location
     , renderError
     ) where
 
+import Control.DeepSeq (NFData)
 import Data.Text (Text)
+import GHC.Generics
 import Text.Megaparsec (PosState(..), SourcePos(..))
 
 import qualified Data.Text as Text
@@ -22,7 +26,7 @@ import qualified Text.Megaparsec.Stream as Stream
 
 -- | Offsets are stored in characters (0-indexed)
 newtype Offset = Offset { getOffset :: Int }
-    deriving newtype (Eq, Num, Show)
+    deriving newtype (Eq, NFData, Num, Show)
 
 -- | This type stores the location of each subexpression
 data Location = Location
@@ -37,7 +41,9 @@ data Location = Location
     , offset :: Offset
     -- ^ The offset (in characters) within the code
     }
-    deriving stock (Eq, Show)
+    deriving stock (Eq, Generic, Show)
+
+instance NFData Location
 
 -- | Render an error message, given a `Location` for the error
 renderError
