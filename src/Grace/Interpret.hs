@@ -15,6 +15,8 @@ module Grace.Interpret
     , InterpretError(..)
     ) where
 
+import Control.DeepSeq (force)
+import qualified Control.Exception
 import Control.Exception.Safe (Exception(..), Handler(..))
 import Control.Monad.Except (MonadError(..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -103,12 +105,16 @@ interpretWith bindings maybeAnnotation manager input = do
             Except.throwError (TypeInferenceError message)
 
         Right inferred -> do
+            liftIO $ putStrLn "About to Normalize.evaluate"
             let evaluationContext = do
                     (variable, _, value) <- bindings
 
                     return (variable, value)
 
-            return (inferred, Normalize.evaluate Nothing evaluationContext resolvedExpression)
+            evaluationResult <- liftIO $ Control.Exception.evaluate $ force $ Normalize.evaluate Nothing evaluationContext resolvedExpression
+                
+            liftIO $ putStrLn "Finished Normalize.evaluate"
+            return (inferred, evaluationResult)
 
 remote :: Input -> Bool
 remote (URI uri) = any (`elem` schemes) (URI.uriScheme uri)

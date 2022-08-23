@@ -74,7 +74,10 @@ fetchWithBody
     -- ^ Response body
 fetchWithBody manager url requestBody = do
     request <- HTTP.parseUrlThrow (Text.unpack url)
-    let postRequest = request { HTTP.method = "POST", HTTP.requestBody = HTTP.RequestBodyBS (Encoding.encodeUtf8 requestBody) }
+    let postRequest = request
+          { HTTP.method = "POST"
+          , HTTP.requestBody = HTTP.RequestBodyBS (Encoding.encodeUtf8 requestBody)
+          }
 
     let handler :: HTTP.HttpException -> IO a
         handler httpException = Exception.throwIO (HttpException httpException)

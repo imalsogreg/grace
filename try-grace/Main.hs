@@ -516,7 +516,7 @@ renderValue ref parent Type.Function{ input, output } function = do
 
             addEventListener inputVal "input" callback
 
-            invoke
+            -- invoke
 
             replaceChildren parent (Array.fromList [ inputVal, hr, outputVal ])
 
@@ -619,7 +619,7 @@ renderInput _ Type.Scalar { scalar = Monotype.Image } = do
   setAttribute input "accept" ".jpeg,.jpg" -- TODO: For now, only accept jpeg images.
                                            -- This invariant comes from core Grace Image monotype.
   let get = do
-        imgBytes <- Maybe.fromMaybe "http://localhost:8004/cat.jpg" <$> toImageValue input
+        imgBytes <- Maybe.fromMaybe "http://localhost:8004/cat_small.jpg" <$> toImageValue input
         return (Value.Scalar (Syntax.Image imgBytes))
 
   return (input, get)

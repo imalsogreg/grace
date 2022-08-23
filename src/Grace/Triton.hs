@@ -1,5 +1,6 @@
 -- | 
 
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -11,6 +12,7 @@ module Grace.Triton where
 
 import Data.List (uncons, find)
 import Data.Foldable (toList)
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as Text
 import Data.ByteString.Lazy( fromStrict, toStrict )
 import Data.Traversable (forM)
@@ -31,6 +33,7 @@ import qualified Grace.Syntax as GraceSyntax
 import qualified Grace.Value as GraceValue
 import Grace.Location (Location(..), Offset(..))
 import qualified Grace.Monotype as Monotype
+import System.Environment (lookupEnv)
 
 -- * Triton Grace primitives
 
@@ -42,11 +45,15 @@ loadContext = do
 
 normalizeTritonCallApplication :: Text -> GraceValue.Value -> IO GraceValue.Value
 normalizeTritonCallApplication prefixedModelName value = do
+  putStrLn "new http manager"
   manager <- HTTP.newManager
 
   -- We have to look up models from scratch because single-input and single-output
   -- values drop the name of the tensor.
+  putStrLn "list models"
   models <- listModels manager
+  
+  putStrLn "find matching model"
   
   -- context <- loadContext -- TODO: It's pretty inefficient to do this every time we normalize an triton call.
   let
@@ -55,6 +62,7 @@ normalizeTritonCallApplication prefixedModelName value = do
     Just model = find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
     -- let inputTensorNamesAndShapes = mmInputs model
 
+  putStrLn "compute inputs"
   let inputs = case value of
         tensor@(GraceValue.Tensor _ _) ->
           let [TritonTensorType {tvtName = inputTensorName}] = mmInputs model
@@ -70,8 +78,10 @@ normalizeTritonCallApplication prefixedModelName value = do
                       Just t  -> lowerTensorValue tvtName t
                     ) (mmInputs model)
         _ -> error "TODO: Unimplemented: input value is a record with multiple tensors"
-  InferenceResponse { outputs = [outputTensor] } <- infer manager (mmName model) (InferenceRequest { inputs = (trace (show inputs) inputs) })
+  putStrLn "call infer"
+  InferenceResponse { outputs = [outputTensor] } <- infer manager (mmName model) (InferenceRequest { inputs = inputs })
 
+  putStrLn "return from normalizeTritonCallApplication"
   return $ reifyTritonTensor outputTensor
 
 -- | Helper functions for normalizaTritonCallApplication
@@ -96,7 +106,7 @@ lowerTensorValue inputTensorName t = case t of
     let (datatype, data_) =
           case elements of
             GraceValue.TensorIntElements ints -> (INT64, data_)
-            GraceValue.TensorFloatElements floats -> (FP32, data_)
+            GraceValue.TensorFloatElements floats -> (FP32, fmap realToFrac (Vector.toList floats))
             in
     TritonTensor { tensorName = inputTensorName
                   , datatype
@@ -150,10 +160,19 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
 -- * Inference
 
 infer :: HTTP.Manager -> Text -> InferenceRequest -> IO InferenceResponse
-infer manager modelName inferenceRequest = do
-  let url = "http://localhost:8000/v2/models/" <> modelName <> "/infer"
+infer manager modelName !inferenceRequest = do
+  putStrLn "infer: compute url"
+  url <- withTritonBaseUrl $ \baseUrl -> pure $  baseUrl <> "/v2/models/" <> modelName <> "/infer"
+  -- putStrLn "infer: about to fetch with this request:"
+  -- print inferenceRequest
+  putStrLn "infer: fetchWithBody"
+  putStrLn "infer: fetchWithBody"
   res <- HTTP.fetchWithBody manager url (decodeUtf8 $ toStrict $ encode inferenceRequest)
+  -- putStrLn "infer: finished fetch with this response:"
+  -- print res
+  putStrLn ("infer: decode response")
   let (Right inferenceResponse) = eitherDecode . fromStrict $ encodeUtf8 res
+  putStrLn ("infer: return")
   return inferenceResponse
 
 data InferenceRequest = InferenceRequest
@@ -253,11 +272,11 @@ instance FromJSON TritonTensorType where
   
 listModels :: Manager -> IO [ModelMetadata]
 listModels manager = do
-  resp <- HTTP.fetchWithBody manager "http://localhost:8000/v2/repository/index" ""
+  resp <- withTritonBaseUrl $ \baseUrl -> HTTP.fetchWithBody manager (baseUrl <> "/v2/repository/index") ""
   let (Right (repositoryResponse :: [RepositoryModel])) = eitherDecode (fromStrict $ encodeUtf8 resp)
   let modelNames = modelName <$> repositoryResponse
   forM modelNames $ \modelName -> do
-    modelResp <- HTTP.fetch manager ("http://localhost:8000/v2/models/" <> modelName)
+    modelResp <- withTritonBaseUrl $ \baseUrl -> HTTP.fetch manager (baseUrl <> "/v2/models/" <> modelName)
     let (Right modelMetadata) = eitherDecode . fromStrict . encodeUtf8 $ modelResp
     return modelMetadata
 
@@ -278,3 +297,11 @@ test = do
 
   let (_, ty, _) = tritonPrimitivesForModel (models !! 0)
   putStrLn (unpack $ Pretty.renderStrict True 60 ty)
+
+withTritonBaseUrl :: (Text -> IO a) -> IO a
+withTritonBaseUrl go = do
+  envHost <- lookupEnv "TRITON_BASE_URL"
+  go (Text.pack $ fromMaybe
+      -- "http://100.127.86.34:8000"
+      "http://localhost:8000"
+      envHost)

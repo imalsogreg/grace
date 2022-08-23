@@ -14,6 +14,7 @@ module Grace.HTTP
     ) where
 
 import Control.Exception (Exception(..))
+import qualified Control.Exception as Exception
 import Data.Text (Text)
 import GHCJS.Fetch (Request(..), JSPromiseException)
 import Data.JSString (JSString)
@@ -69,13 +70,15 @@ fetchWithBody
 fetchWithBody _manager url requestBody = do
     -- let reqBodyJSString = JSString.pack (BS.unpack requestBody)
     reqBodyJSString <- (toJSVal requestBody)
-    let request =
+    consoleLog "evaluate request"
+    request <- Exception.evaluate $
           Request
             { reqUrl = JSString.pack (Text.unpack url)
             , reqOptions = Fetch.defaultRequestOptions { Fetch.reqOptMethod = "POST"
                                                  , Fetch.reqOptBody = Just reqBodyJSString
                                                  }
             }
+    consoleLog "done evaluating request"
     consoleLog ("about to fetch")
     resp <- Fetch.fetch request
     jsString <- Fetch.responseText resp

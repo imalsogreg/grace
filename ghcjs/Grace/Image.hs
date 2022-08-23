@@ -48,10 +48,10 @@ foreign import javascript unsafe "$r = new Array(); for (r = 0; r < $1; r++) { f
 foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r < $1.height; r++) { for (c = 0; c < w; c++) { i = c*4 + r * w * 4; d = $1.data; ($r).push(d[i] * 0.001307); ($r).push(d[i+1] * 0.001307); ($r).push(d[i+2] * 0.001307) }  };"
     imageDataToPixelMajorTensor_ :: JSVal -> IO JSVal
 
-foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c * 3 + r * $3 * 3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i+1] * 255; d[j+2] = ($2)[i+2] * 255; d[j+3] = 255; }}; iData.data = d; ctx.putImageData(iData,0,0);"
+foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c * 3 + r * $3 * 3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i+1] * 255; d[j+2] = ($2)[i+2] * 255; d[j+3] = 255; }; console.log(r)}; iData.data = d; ctx.putImageData(iData,0,0);"
   drawTensorToCanvas :: Canvas.Canvas -> JSVal -> Int -> Int -> IO ()
 
-foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c  + r * $3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i] * 255; d[j+2] = ($2)[i] * 255; d[j+3] = 255; }}; iData.data = d; ctx.putImageData(iData,0,0);"
+foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c  + r * $3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i] * 255; d[j+2] = ($2)[i] * 255; d[j+3] = 255; }; console.log(r)}; iData.data = d; ctx.putImageData(iData,0,0);"
   drawMonochromeTensorToCanvas :: Canvas.Canvas -> JSVal -> Int -> Int -> IO ()
 
 -- imageDataToChannelMajorTensor :: TypedArray.Uint8ClampedArray -> Int -> Int -> IO [Float]
@@ -111,17 +111,25 @@ imageFromTensor :: [Int] ->[Float] ->  Img
 -- Pixel-major rgb. 
 imageFromTensor [_,nRows,nCols,3] rgbValues =
   unsafePerformIO $ do
+  
+    t0 <- getCurrentTime
     consoleLog "imageFromTensor"
     jsValues <- toJSVal rgbValues
     canvas <- Canvas.create nCols nRows
     -- appendChild_ canvas -- TODO: temporary, debugging
     drawTensorToCanvas canvas jsValues nCols nRows
+    
+    t1 <- getCurrentTime
+    consoleLog (Text.pack $ "imageFromTensor took: " <> show (diffUTCTime t1 t0))
     Img <$> toDataUrl canvas
 imageFromTensor [1,1,nRows,nCols] monochromeValues =
   unsafePerformIO $ do
+    t0 <- getCurrentTime
     jsValues <- toJSVal monochromeValues
     canvas <- Canvas.create nCols nRows
     drawMonochromeTensorToCanvas canvas jsValues nCols nRows
+    t1 <- getCurrentTime
+    consoleLog (Text.pack $ "imageFromMonochromeTensor took: " <> show (diffUTCTime t1 t0))
     Img <$> toDataUrl canvas
 imageFromTensor shape monochromeValues =
   unsafePerformIO $ do

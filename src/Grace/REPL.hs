@@ -11,7 +11,9 @@ module Grace.REPL
     ) where
 
 import Control.Applicative (empty)
+import Control.DeepSeq (force)
 import Control.Exception.Safe (displayException, throwIO)
+import qualified Control.Exception as Exception
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (MonadState(..))
 import Data.Foldable (toList)
@@ -61,11 +63,15 @@ repl = do
                     err e
 
                 Right (_inferred, value) -> do
-                    let syntax = Normalize.quote [] value
+                    liftIO $ putStrLn "About to Normalize.quote"
+                    syntax <- liftIO $ Exception.evaluate $ force $  Normalize.quote [] value
+                    liftIO $ putStrLn "Finished Normalize.quote"
 
                     width <- liftIO Width.getWidth
 
+                    liftIO $ putStrLn "About to prettyprint"
                     liftIO (Pretty.renderIO True width IO.stdout (Pretty.pretty syntax <> "\n"))
+                    liftIO $ putStrLn "Finished prettyprint"
 
     let help _string = do
             liftIO (putStrLn

@@ -544,6 +544,8 @@ prettyExpression Annotation{..} =
             <>  " "
             <>  pretty annotation
             )
+prettyExpression Tensor{..} = "Tensor"
+prettyExpression TritonCall {..} = pretty modelName
 prettyExpression other =
     prettyTimesExpression other
 

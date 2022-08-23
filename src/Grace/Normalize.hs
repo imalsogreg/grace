@@ -6,6 +6,9 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE ViewPatterns      #-}
 
+#define DEBUG
+#define TIME
+
 -- | This module contains the logic for efficiently evaluating an expression
 module Grace.Normalize
     ( -- * Normalization
@@ -15,6 +18,9 @@ module Grace.Normalize
     ) where
 
 import Data.Scientific (Scientific)
+import qualified Control.Exception as Exception
+import Control.DeepSeq (NFData, force)
+import Data.Time (getCurrentTime, diffUTCTime)
 import qualified Data.Foldable as Foldable
 import Data.Sequence (Seq(..), ViewL(..))
 import Data.Text (Text)
@@ -119,6 +125,7 @@ evaluate
     -> Value
     -- ^ Result, free of reducible sub-expressions
 evaluate type_ env syntax =
+    dbg' "evaluate" syntax $
     case syntax of
         Syntax.Variable{..} ->            lookupVariable name index env
 
@@ -275,16 +282,16 @@ evaluate type_ env syntax =
     evaluating anonymous functions and evaluating all built-in functions.
 -}
 apply :: Value -> Value -> Type Location -> Value
-apply (Value.Lambda (Closure name capturedEnv body)) argument _ =
+apply (Value.Lambda (Closure name capturedEnv body)) argument _ = dbg "apply lambda" $ 
     evaluate Nothing ((name, argument) : capturedEnv) body
 apply
     (Value.Merge (Value.Record alternativeHandlers))
     (Value.Application (Value.Alternative alternative) x) type_
-    | Just f <- HashMap.lookup alternative alternativeHandlers =
+    | Just f <- HashMap.lookup alternative alternativeHandlers = dbg "apply alternative" $
         apply f x type_ -- TOOD I'm not sure if type_ is correct here.
 apply
     (Value.Application (Value.Builtin ListDrop) (Value.Scalar (Natural n)))
-    (Value.List elements) _ =
+    (Value.List elements) _ = dbg "apply ListDrop" $
         Value.List (Seq.drop (fromIntegral n) elements)
 apply
     (Value.Application (Value.Builtin ListTake) (Value.Scalar (Natural n)))
@@ -301,6 +308,7 @@ apply (Value.Builtin ListLast) (Value.List (_ :|> x)) _ =
 apply (Value.Builtin ListReverse) (Value.List xs) _ =
     Value.List (Seq.reverse xs)
 apply ((Value.Application (Value.Builtin ListTopNLabels) (Value.Scalar (Natural n)))) (Value.List elems) type_ =
+  dbg "apply ListTopNElements" $
     let
       get_value (Value.Record fields) = case HashMap.lookup "value" fields of
         Just (Value.Scalar (Real v)) -> v
@@ -310,10 +318,13 @@ apply ((Value.Application (Value.Builtin ListTopNLabels) (Value.Scalar (Natural 
       sorted_elems = List.sortBy (\elemA  elemB -> compare (get_value elemB) (get_value elemA)) $ toList elems
     in Value.List (Seq.fromList (List.take (fromIntegral $ toInteger n) sorted_elems))
 apply (Value.Application (Value.Application (Value.Builtin ListZipWith) f) (Value.List elemsA)) (Value.List elemsB) type_ =
+  dbg "apply listzipwith" $
     Value.List (Seq.zipWith (\a b -> apply (apply f a type_) b type_) elemsA elemsB)
 apply (Value.TritonCall modelName) tensor@(Value.Tensor _ _) _ =
+  dbg' "apply tritoncall to this tensor: " tensor $
     unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensor
 apply (Value.TritonCall modelName) tensors@(Value.Record _) _ =
+  dbg' "apply tritoncall to this record: " tensors $
     unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensors
 apply
     (Value.Application
@@ -350,7 +361,7 @@ apply
 apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.Image imageBytes)) resultType =
   case imageToTensor (Img imageBytes) shape of
     Left err -> dbg "unhappy imageToTensor" $ error err
-    Right ((width, height), elements) ->
+    Right ((width, height), elements) -> dbg "apply imagetotensor" $
       let
         tensorElements = Value.TensorFloatElements $ Vector.fromList elements
         newShape = case shape of
@@ -427,6 +438,7 @@ apply (Value.Builtin RealShow) (Value.Scalar (Integer n)) _ =
 apply (Value.Builtin RealShow) (Value.Scalar (Real n)) _ =
     Value.Scalar (Text (Text.pack (show n)))
 apply (Value.Builtin TensorFromList) (Value.List xs) type_ =
+  dbg "apply tensorfromlist" $
   case type_ of
     Tensor _ (Shape { tensorShape = TensorShape dims }) _  ->
       let
@@ -438,6 +450,7 @@ apply (Value.Builtin TensorFromList) (Value.List xs) type_ =
         else error "Dimension mismatch"
     _ -> error $ "Impossible case, application does not results in not a tensor: " <> Text.unpack (renderStrict True 50 type_)
 apply (Value.Builtin TensorToList) (Value.Tensor _ xs) _ =
+  dbg "apply tensortolist" $
   case xs of
     Value.TensorIntElements ints -> Value.List (Seq.fromList $ (\x -> Value.Scalar (Syntax.Integer (fromIntegral x))) <$> Vector.toList ints)
     Value.TensorFloatElements floats -> Value.List (Seq.fromList $ (\x -> Value.Scalar (Syntax.Real (realToFrac x))) <$> Vector.toList floats)
@@ -462,7 +475,7 @@ apply
             )
         )
     )
-    v0 type_ = loop v0
+    v0 type_ = dbg "apply jsonfold" $ loop v0
   where
     loop (Value.Scalar (Bool b)) =
         apply boolHandler (Value.Scalar (Bool b)) type_ -- TODO: is _type right here?
@@ -487,6 +500,7 @@ apply
     loop v =
         v
 apply function argument _ =
+  dbg "apply Application" $
     Value.Application function argument
 
 countNames :: Text -> [Text] -> Int
@@ -591,17 +605,48 @@ foreign import javascript unsafe "console.log($1)"
   consoleLog_ :: JSString -> IO ()
 
 consoleLog :: Text -> IO ()
+#ifdef DEBUG
 consoleLog = consoleLog_ . JSString.pack . Text.unpack
+#else
+consoleLog _ = return ()
+#endif
 
-dbg :: Text -> a -> a
-dbg t a = seq (unsafePerformIO $ consoleLog t) a
+dbg :: NFData a => Text -> a -> a
+dbg t a =
+#ifdef TIME
+  unsafePerformIO $ do
+    consoleLog (t <> " starting")
+    t0 <- getCurrentTime
+    v <- Exception.evaluate $ force a
+    t1 <- getCurrentTime
+    let dt = diffUTCTime t1 t0
+    consoleLog (t <> " took " <> Text.pack (show dt))
+    return v
+#else
+  seq (unsafePerformIO $ consoleLog t) a
+#endif
 
-dbg' :: Show a => Text -> a -> b -> b
+dbg' :: (Show a, NFData b) => Text -> a -> b -> b
 dbg' prefix val x =
+#ifdef TIME
+  unsafePerformIO $ do
+    consoleLog (prefix <> " starting")
+    t0 <- getCurrentTime
+    v <- Exception.evaluate $ force x
+    t1 <- getCurrentTime
+    let dt = diffUTCTime t1 t0
+    consoleLog (prefix <> " took " <> Text.pack (show dt))
+    return v
+#else
   seq (unsafePerformIO (consoleLog (prefix <> Text.pack (show val)))) x
+#endif
 #else
 consoleLog :: Text -> IO ()
+#ifdef DEBUG
 consoleLog = putStrLn . Text.unpack
+#else
+consoleLog _ = return ()
+#endif
 
 dbg :: Text -> a -> a
 dbg t a = seq (unsafePerformIO $ consoleLog t) a
