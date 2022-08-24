@@ -1,6 +1,7 @@
 -- | 
 
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -10,6 +11,12 @@
 
 module Grace.Triton where
 
+import qualified Control.Concurrent.MVar as MVar
+import System.IO.Unsafe (unsafePerformIO)
+import Control.DeepSeq (NFData, force)
+import qualified Control.Exception as Exception
+import Data.Time (UTCTime, getCurrentTime, diffUTCTime)
+import qualified Data.Map as Map
 import Data.List (uncons, find)
 import Data.Foldable (toList)
 import Data.Maybe (fromMaybe)
@@ -35,23 +42,37 @@ import Grace.Location (Location(..), Offset(..))
 import qualified Grace.Monotype as Monotype
 import System.Environment (lookupEnv)
 
+#ifdef ghcjs_HOST_OS
+import qualified Data.JSString as JSString
+#endif
+
 -- * Triton Grace primitives
 
 loadContext :: IO ( [(Text, GraceType.Type Location, GraceValue.Value)])
 loadContext = do
   manager <- HTTP.newManager
-  models <- listModels manager
+  cache <- MVar.newMVar Map.empty
+  models <- listModels manager (Just cache)
   return $ tritonPrimitivesForModel <$> models
 
-normalizeTritonCallApplication :: Text -> GraceValue.Value -> IO GraceValue.Value
-normalizeTritonCallApplication prefixedModelName value = do
+time :: Text -> IO a -> IO a
+time prefix action = do
+  consoleLog ("about to " <> prefix)
+  t0 <- getCurrentTime
+  result <- action
+  t1 <- getCurrentTime
+  consoleLog $ prefix <> " took " <> Text.pack (show (diffUTCTime t1 t0))
+  return result
+
+normalizeTritonCallApplication :: Text -> GraceValue.Value -> Maybe (MVar.MVar FetchCache) -> IO GraceValue.Value
+normalizeTritonCallApplication prefixedModelName lazyValue cache = do
   putStrLn "new http manager"
-  manager <- HTTP.newManager
+  manager <- time "HTTP.newManager" HTTP.newManager
 
   -- We have to look up models from scratch because single-input and single-output
   -- values drop the name of the tensor.
   putStrLn "list models"
-  models <- listModels manager
+  models <- time "list models" $ listModels manager cache
   
   putStrLn "find matching model"
   
@@ -62,8 +83,10 @@ normalizeTritonCallApplication prefixedModelName value = do
     Just model = find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
     -- let inputTensorNamesAndShapes = mmInputs model
 
+  value <- time "force the value" $ Exception.evaluate $ force lazyValue
+
   putStrLn "compute inputs"
-  let inputs = case value of
+  inputs <- time "compute inputs (with force)" $ Exception.evaluate $ force $ case value of
         tensor@(GraceValue.Tensor _ _) ->
           let [TritonTensorType {tvtName = inputTensorName}] = mmInputs model
           in [lowerTensorValue inputTensorName tensor]
@@ -78,19 +101,12 @@ normalizeTritonCallApplication prefixedModelName value = do
                       Just t  -> lowerTensorValue tvtName t
                     ) (mmInputs model)
         _ -> error "TODO: Unimplemented: input value is a record with multiple tensors"
+
   putStrLn "call infer"
-  InferenceResponse { outputs = [outputTensor] } <- infer manager (mmName model) (InferenceRequest { inputs = inputs })
+  InferenceResponse { outputs = [outputTensor] } <- time "call infer" $ infer manager (mmName model) (InferenceRequest { inputs = inputs }) cache
 
   putStrLn "return from normalizeTritonCallApplication"
   return $ reifyTritonTensor outputTensor
-
--- | Helper functions for normalizaTritonCallApplication
-lowerElements :: GraceValue.Value -> [Scientific]
-lowerElements v = case v of
-  GraceValue.Scalar ( GraceSyntax.Real r ) -> [realToFrac r]
-  GraceValue.Scalar ( GraceSyntax.Natural r ) -> [realToFrac r] -- TODO: It seems like a bug that we need this - we _are_ seeing Nats.
-  GraceValue.List (xs) -> concat $ lowerElements <$> xs
-  _ -> error ("val: " <> show v)
 
 -- | Helper functions for normalizaTritonCallApplication
 reifyFloatElement :: Scientific -> GraceValue.Value
@@ -101,19 +117,20 @@ reifyIntElement v = GraceValue.Scalar (GraceSyntax.Integer (round v))
 
 -- | Helper functions for normalizaTritonCallApplication
 lowerTensorValue :: Text -> GraceValue.Value -> TritonTensor
-lowerTensorValue inputTensorName t = case t of
-  GraceValue.Tensor (Monotype.TensorShape shape) elements ->
-    let (datatype, data_) =
-          case elements of
-            GraceValue.TensorIntElements ints -> (INT64, data_)
-            GraceValue.TensorFloatElements floats -> (FP32, fmap realToFrac (Vector.toList floats))
-            in
-    TritonTensor { tensorName = inputTensorName
-                  , datatype
-                  , shape = shape
-                  , data_ -- = concat $ toList $ lowerElements <$> (elements)
-                  }
-  _ -> error "TODO: should have passed a grace Tensor value"
+lowerTensorValue !inputTensorName !t =
+  unsafePerformIO $ time ("lowerTensorValue " <> inputTensorName) $ Exception.evaluate $ force $
+    case t of
+      GraceValue.Tensor (Monotype.TensorShape shape) elements -> do
+        (datatype, xs) <-
+              case elements of
+                GraceValue.TensorIntElements ints -> pure (INT64, undefined)
+                GraceValue.TensorFloatElements floats -> pure (FP32, fmap realToFrac (Vector.toList floats))
+        pure $ TritonTensor { tensorName = inputTensorName
+                      , datatype
+                      , shape = shape
+                      , data_ = xs -- = concat $ toList $ lowerElements <$> (elements)
+                      }
+      _ -> error "TODO: should have passed a grace Tensor value"
 
 -- | Helper functions for normalizaTritonCallApplication
 reifyTritonTensor :: TritonTensor -> GraceValue.Value
@@ -159,25 +176,35 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
 
 -- * Inference
 
-infer :: HTTP.Manager -> Text -> InferenceRequest -> IO InferenceResponse
-infer manager modelName !inferenceRequest = do
+infer :: HTTP.Manager -> Text -> InferenceRequest -> Maybe (MVar.MVar FetchCache) -> IO InferenceResponse
+infer manager modelName inferenceRequest cache = do
+  reqData <- time "INFER: force req data" $ Exception.evaluate $ force inferenceRequest
+  reqJson <- time "INFER: aeson encode data" $ Exception.evaluate $ force $ encode reqData
+  reqBody <- time "INFER: utf8 process" $ Exception.evaluate (decodeUtf8 $ toStrict $ reqJson)
   putStrLn "infer: compute url"
   url <- withTritonBaseUrl $ \baseUrl -> pure $  baseUrl <> "/v2/models/" <> modelName <> "/infer"
   -- putStrLn "infer: about to fetch with this request:"
   -- print inferenceRequest
   putStrLn "infer: fetchWithBody"
   putStrLn "infer: fetchWithBody"
-  res <- HTTP.fetchWithBody manager url (decodeUtf8 $ toStrict $ encode inferenceRequest)
+  res <- time "INFER: HTTP.fetchWithBody" $ HTTP.fetchWithBody manager url reqBody cache
   -- putStrLn "infer: finished fetch with this response:"
   -- print res
   putStrLn ("infer: decode response")
-  let (Right inferenceResponse) = eitherDecode . fromStrict $ encodeUtf8 res
-  putStrLn ("infer: return")
-  return inferenceResponse
+  resp <- time "infer: decode response" $ Exception.evaluate $ eitherDecode $ fromStrict $ encodeUtf8 res
+  case resp of
+    Right inferenceResponse -> do
+      consoleLog "infer: Got good response"
+      return inferenceResponse
+    Left err -> do
+      consoleLog ("infer: Got bad response: " <> Text.pack (show err))
+      error "No progress"
 
 data InferenceRequest = InferenceRequest
   { inputs :: [TritonTensor] }
   deriving (Eq, Show, Generic)
+
+instance NFData InferenceRequest
 
 data InferenceResponse = InferenceResponse
   { outputs :: [TritonTensor] }
@@ -193,6 +220,8 @@ data TritonTensor = TritonTensor
   , data_ :: [Scientific]
   }
   deriving (Eq, Show, Generic)
+
+instance NFData TritonTensor
 
 instance ToJSON TritonTensor where
   toJSON TritonTensor { tensorName, datatype, shape, data_ } = object
@@ -213,7 +242,9 @@ instance FromJSON TritonTensor where
 data DataType
   = FP32
   | INT64
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance NFData DataType
 
 instance ToJSON DataType where
   toJSON d = case d of
@@ -270,9 +301,9 @@ instance FromJSON TritonTensorType where
     tvtShape <- o .: "shape"
     return TritonTensorType {..}
   
-listModels :: Manager -> IO [ModelMetadata]
-listModels manager = do
-  resp <- withTritonBaseUrl $ \baseUrl -> HTTP.fetchWithBody manager (baseUrl <> "/v2/repository/index") ""
+listModels :: Manager -> Maybe (MVar.MVar FetchCache) -> IO [ModelMetadata]
+listModels manager cache = do
+  resp <- withTritonBaseUrl $ \baseUrl -> HTTP.fetchWithBody manager (baseUrl <> "/v2/repository/index") "" cache
   let (Right (repositoryResponse :: [RepositoryModel])) = eitherDecode (fromStrict $ encodeUtf8 resp)
   let modelNames = modelName <$> repositoryResponse
   forM modelNames $ \modelName -> do
@@ -292,8 +323,8 @@ test = do
                , data_ = replicate (28 * 28) 1.0
                }]
             }
-  models <- listModels manager
-  _ <- infer manager "mnist" req
+  models <- listModels manager Nothing
+  _ <- infer manager "mnist" req Nothing
 
   let (_, ty, _) = tritonPrimitivesForModel (models !! 0)
   putStrLn (unpack $ Pretty.renderStrict True 60 ty)
@@ -305,3 +336,13 @@ withTritonBaseUrl go = do
       -- "http://100.127.86.34:8000"
       "http://localhost:8000"
       envHost)
+
+consoleLog :: Text -> IO ()
+#ifdef ghcjs_HOST_OS
+consoleLog = consoleLog_ . JSString.pack . Text.unpack
+
+foreign import javascript unsafe "console.log($1)"
+  consoleLog_ :: JSString.JSString -> IO ()
+#else
+conseleLog = putStrLn
+#endif

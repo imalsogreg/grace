@@ -10,6 +10,7 @@ module Grace.REPL
       repl
     ) where
 
+import qualified Control.Concurrent.MVar as MVar
 import Control.Applicative (empty)
 import Control.DeepSeq (force)
 import Control.Exception.Safe (displayException, throwIO)
@@ -18,6 +19,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (MonadState(..))
 import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.Map as Map
 import Grace.Interpret (Input(..))
 import Grace.Lexer (reserved)
 import System.Console.Haskeline (Interrupt(..))
@@ -44,11 +46,12 @@ repl :: IO ()
 repl = do
     manager <- HTTP.newManager
     context0 <- Triton.loadContext
+    cache <- MVar.newMVar Map.empty
 
     let interpret input = do
             context <- get
 
-            Except.runExceptT (Interpret.interpretWith (context0 <> context) Nothing manager input)
+            Except.runExceptT (Interpret.interpretWith (context0 <> context) Nothing manager input (Just cache))
 
     let err e =
             liftIO (Text.IO.hPutStrLn IO.stderr (Text.pack (displayException e)))
@@ -64,7 +67,7 @@ repl = do
 
                 Right (_inferred, value) -> do
                     liftIO $ putStrLn "About to Normalize.quote"
-                    syntax <- liftIO $ Exception.evaluate $ force $  Normalize.quote [] value
+                    syntax <- liftIO $ Exception.evaluate $ force $  Normalize.quote [] value (Just cache)
                     liftIO $ putStrLn "Finished Normalize.quote"
 
                     width <- liftIO Width.getWidth

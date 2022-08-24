@@ -15,6 +15,7 @@ module Grace.Interpret
     , InterpretError(..)
     ) where
 
+import qualified Control.Concurrent.MVar as MVar
 import Control.DeepSeq (force)
 import qualified Control.Exception
 import Control.Exception.Safe (Exception(..), Handler(..))
@@ -22,7 +23,7 @@ import Control.Monad.Except (MonadError(..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Maybe (fromJust)
 import Data.Text (Text)
-import Grace.HTTP (Manager)
+import Grace.HTTP (Manager, FetchCache)
 import Grace.Input (Input(..))
 import Grace.Location (Location(..))
 import Grace.Syntax (Syntax(..))
@@ -48,11 +49,13 @@ import qualified Text.URI as URI
 -}
 interpret
     :: (MonadError InterpretError m, MonadIO m)
-    => Input -> m (Type Location, Value)
-interpret input = do
+    => Input
+    -> Maybe (MVar.MVar FetchCache)
+    -> m (Type Location, Value)
+interpret input cache = do
     manager <- liftIO HTTP.newManager
 
-    interpretWith [] Nothing manager input
+    interpretWith [] Nothing manager input cache
 
 -- | Like `interpret`, but accepts a custom list of bindings
 interpretWith
@@ -63,8 +66,9 @@ interpretWith
     -- ^ Optional expected type for the input
     -> Manager
     -> Input
+    -> Maybe (MVar.MVar FetchCache)
     -> m (Type Location, Value)
-interpretWith bindings maybeAnnotation manager input = do
+interpretWith bindings maybeAnnotation manager input cache = do
     eitherPartiallyResolved <- do
         liftIO
             (Exception.catches
@@ -81,7 +85,7 @@ interpretWith bindings maybeAnnotation manager input = do
     let process (maybeAnnotation', child) = do
             referentiallySane input (input <> child)
 
-            interpretWith bindings maybeAnnotation' manager (input <> child)
+            interpretWith bindings maybeAnnotation' manager (input <> child) cache
 
     resolvedExpression <- traverse process (annotate partiallyResolved)
 
@@ -111,7 +115,7 @@ interpretWith bindings maybeAnnotation manager input = do
 
                     return (variable, value)
 
-            evaluationResult <- liftIO $ Control.Exception.evaluate $ force $ Normalize.evaluate Nothing evaluationContext resolvedExpression
+            evaluationResult <- liftIO $ Control.Exception.evaluate $ force $ Normalize.evaluate Nothing evaluationContext resolvedExpression cache
                 
             liftIO $ putStrLn "Finished Normalize.evaluate"
             return (inferred, evaluationResult)

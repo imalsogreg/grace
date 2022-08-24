@@ -11,6 +11,8 @@ module Grace
       main
     ) where
 
+import qualified Control.Concurrent.MVar as MVar
+import qualified Data.Map as Map
 import Control.Applicative (many, (<|>))
 import Control.Exception.Safe (Exception(..))
 import Data.Foldable (traverse_)
@@ -173,6 +175,7 @@ throws (Right result) = do
 main :: IO ()
 main = do
     options <- Options.execParser parserInfo
+    cache <- Just <$> MVar.newMVar Map.empty
 
     case options of
         Interpret{..} -> do
@@ -183,11 +186,11 @@ main = do
                     return (Path file)
 
             eitherResult <- do
-                Except.runExceptT (Interpret.interpret input)
+                Except.runExceptT (Interpret.interpret input cache)
 
             (inferred, value) <- throws eitherResult
 
-            let syntax = Normalize.quote [] value
+            let syntax = Normalize.quote [] value cache
 
             let annotatedExpression
                     | annotate =
@@ -222,7 +225,7 @@ main = do
             manager <- HTTP.newManager
 
             eitherResult <- do
-                Except.runExceptT (Interpret.interpretWith [] (Just expected) manager input)
+                Except.runExceptT (Interpret.interpretWith [] (Just expected) manager input cache)
 
             (_, value) <- throws eitherResult
 

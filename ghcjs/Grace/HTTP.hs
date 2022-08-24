@@ -11,14 +11,18 @@ module Grace.HTTP
     , fetch
     , fetchWithBody
     , renderError
+    , FetchCache
     ) where
 
 import Control.Exception (Exception(..))
 import qualified Control.Exception as Exception
 import Data.Text (Text)
+import Data.Maybe (fromMaybe, maybe)
+import qualified Data.Map as Map
 import GHCJS.Fetch (Request(..), JSPromiseException)
 import Data.JSString (JSString)
 import GHCJS.Marshal (toJSVal)
+import qualified Control.Concurrent.MVar as MVar
 import GHCJS.Marshal.Pure (pToJSVal)
 
 import qualified Data.JSString as JSString
@@ -40,6 +44,8 @@ type HttpException = JSPromiseException
 -}
 newManager :: IO Manager
 newManager = mempty
+
+type FetchCache = Map.Map (Text, Text) Text
 
 -- | Fetch a URL (using @XMLHttpRequest@)
 fetch
@@ -65,25 +71,37 @@ fetchWithBody
     -> Text
     -> Text
     -- ^ Request body
+    -> Maybe (MVar.MVar FetchCache)
     -> IO Text
     -- ^ Response body
-fetchWithBody _manager url requestBody = do
+fetchWithBody _manager url requestBody cacheMVar = do
     -- let reqBodyJSString = JSString.pack (BS.unpack requestBody)
     reqBodyJSString <- (toJSVal requestBody)
     consoleLog "evaluate request"
-    request <- Exception.evaluate $
-          Request
-            { reqUrl = JSString.pack (Text.unpack url)
-            , reqOptions = Fetch.defaultRequestOptions { Fetch.reqOptMethod = "POST"
-                                                 , Fetch.reqOptBody = Just reqBodyJSString
-                                                 }
-            }
-    consoleLog "done evaluating request"
-    consoleLog ("about to fetch")
-    resp <- Fetch.fetch request
-    jsString <- Fetch.responseText resp
-    consoleLog ("finished fetch")
-    return (Text.pack (JSString.unpack jsString))
+    let cacheKey = (url, requestBody)
+    cache <- maybe (pure Map.empty) MVar.takeMVar cacheMVar
+    case Map.lookup cacheKey cache of
+      Just resp -> do
+        consoleLog "cache hit"
+        maybe (pure ()) (\c -> MVar.putMVar c cache) cacheMVar
+        return resp
+      Nothing -> do
+        consoleLog "cache miss"
+
+        request <- Exception.evaluate $
+            Request
+                { reqUrl = JSString.pack (Text.unpack url)
+                , reqOptions = Fetch.defaultRequestOptions { Fetch.reqOptMethod = "POST"
+                                                    , Fetch.reqOptBody = Just reqBodyJSString
+                                                    }
+                }
+        consoleLog ("about to fetch")
+        resp <- Fetch.fetch request
+        jsString <- Fetch.responseText resp
+        let respText = Text.pack (JSString.unpack jsString)
+        consoleLog ("finished fetch")
+        maybe (pure ()) (\c -> MVar.putMVar c (Map.insert cacheKey respText cache)) cacheMVar
+        return respText
 
 
 -- | Render an `HttpException` as `Text`

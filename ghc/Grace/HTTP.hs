@@ -12,6 +12,7 @@ module Grace.HTTP
     , fetch
     , fetchWithBody
     , renderError
+    , FetchCache
     ) where
 
 import Control.Exception (Exception(..))
@@ -20,6 +21,8 @@ import Data.Text.Encoding.Error (UnicodeException)
 import Network.HTTP.Client (HttpExceptionContent(..), Manager)
 
 import qualified Control.Exception as Exception
+import qualified Control.Concurrent.MVar as MVar
+import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Encoding
 import qualified Data.Text.Lazy as Text.Lazy
@@ -40,6 +43,8 @@ instance Exception HttpException where
 -- | Acquire a new `Manager`
 newManager :: IO Manager
 newManager = TLS.newTlsManager
+
+type FetchCache = Map.Map (Text, Text) Text
 
 -- | Fetch a URL (using the @http-client@ package)
 fetch
@@ -70,9 +75,10 @@ fetchWithBody
     -- ^ URL
     -> Text
     -- ^ Request Body
+    -> Maybe (MVar.MVar FetchCache)
     -> IO Text
     -- ^ Response body
-fetchWithBody manager url requestBody = do
+fetchWithBody manager url requestBody cache = do
     request <- HTTP.parseUrlThrow (Text.unpack url)
     let postRequest = request
           { HTTP.method = "POST"

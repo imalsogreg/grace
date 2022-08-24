@@ -17,6 +17,8 @@ module Grace.Normalize
     , apply
     ) where
 
+import qualified Control.Concurrent.MVar as MVar
+import Grace.HTTP (FetchCache)
 import Data.Scientific (Scientific)
 import qualified Control.Exception as Exception
 import Control.DeepSeq (NFData, force)
@@ -94,9 +96,9 @@ lookupVariable name index environment =
     > instantiate (Closure name env expression) value =
     >    evaluate ((name, value) : env) expression
 -}
-instantiate :: Closure -> Value -> Value
-instantiate (Closure name env syntax) value =
-    evaluate Nothing ((name, value) : env) syntax
+instantiate :: Closure -> Value -> Maybe (MVar.MVar FetchCache) -> Value
+instantiate (Closure name env syntax) value cache =
+    evaluate Nothing ((name, value) : env) syntax cache
 
 asInteger :: Scalar -> Maybe Integer
 asInteger (Natural n) = Just (fromIntegral n)
@@ -122,41 +124,42 @@ evaluate
     -- ^ Evaluation environment (starting at @[]@ for a top-level expression)
     -> Syntax Location (Type Location, Value)
     -- ^ Surface syntax
+    -> Maybe (MVar.MVar FetchCache)
     -> Value
     -- ^ Result, free of reducible sub-expressions
-evaluate type_ env syntax =
+evaluate type_ env syntax cache =
     dbg' "evaluate" syntax $
     case syntax of
         Syntax.Variable{..} ->            lookupVariable name index env
 
-        Syntax.Application{..} -> apply function' argument' (appType)
+        Syntax.Application{..} -> apply function' argument' (appType) cache
           where
-            function' = evaluate type_ env function
-            argument' = evaluate type_ env argument
+            function' = evaluate type_ env function cache
+            argument' = evaluate type_ env argument cache
             Right appType = typeOf syntax
 
         Syntax.Lambda{..} ->
             Value.Lambda (Closure name env body)
 
         Syntax.Annotation{..} ->
-            evaluate (Just annotation) env annotated
+            evaluate (Just annotation) env annotated cache
 
         Syntax.Let{..} ->
-            evaluate type_ (foldl snoc env bindings) body
+            evaluate type_ (foldl snoc env bindings) body cache
           where
             snoc environment Syntax.Binding{ name, assignment} =
-                (name, evaluate type_ environment assignment) : environment
+                (name, evaluate type_ environment assignment cache) : environment
 
         Syntax.List{..} ->
-            Value.List (fmap (evaluate type_ env) elements)
+            Value.List (fmap (\v -> evaluate type_ env v cache) elements)
 
         Syntax.Record{..} ->
             Value.Record (HashMap.fromList (map adapt fieldValues))
           where
-            adapt (key, value) = (key, evaluate type_ env value)
+            adapt (key, value) = (key, evaluate type_ env value cache)
 
         Syntax.Field{..} ->
-            case evaluate type_ env record of
+            case evaluate type_ env record cache of
                 Value.Record fieldValues
                     | Just value <- HashMap.lookup field fieldValues ->
                         value
@@ -167,7 +170,7 @@ evaluate type_ env syntax =
             Value.Alternative name
 
         Syntax.Merge{..} ->
-            Value.Merge (evaluate type_ env handlers)
+            Value.Merge (evaluate type_ env handlers cache)
 
         Syntax.If{..} ->
             case predicate' of
@@ -175,9 +178,9 @@ evaluate type_ env syntax =
                 Value.Scalar (Bool False) -> ifFalse'
                 _ -> Value.If predicate' ifTrue' ifFalse'
           where
-            predicate' = evaluate type_ env predicate
-            ifTrue'    = evaluate type_ env ifTrue
-            ifFalse'   = evaluate type_ env ifFalse
+            predicate' = evaluate type_ env predicate cache
+            ifTrue'    = evaluate type_ env ifTrue cache
+            ifFalse'   = evaluate type_ env ifFalse cache
 
         Syntax.Scalar{..} ->
             Value.Scalar scalar
@@ -191,8 +194,8 @@ evaluate type_ env syntax =
                     Value.Scalar (Bool False) -> Value.Scalar (Bool False)
                     _ -> Value.Operator left' Syntax.And right'
           where
-            left'  = evaluate type_ env left
-            right' = evaluate type_ env right
+            left'  = evaluate type_ env left cache
+            right' = evaluate type_ env right cache
 
         Syntax.Operator{ operator = Syntax.Or, .. } ->
             case left' of
@@ -203,8 +206,8 @@ evaluate type_ env syntax =
                     Value.Scalar (Bool False) -> left'
                     _ -> Value.Operator left' Syntax.Or right'
           where
-            left'  = evaluate type_ env left
-            right' = evaluate type_ env right
+            left'  = evaluate type_ env left cache
+            right' = evaluate type_ env right cache
 
         Syntax.Operator{ operator = Syntax.Times, .. } ->
             case (left', right') of
@@ -229,8 +232,8 @@ evaluate type_ env syntax =
                 _ ->
                     Value.Operator left' Syntax.Times right'
           where
-            left'  = evaluate type_ env left
-            right' = evaluate type_ env right
+            left'  = evaluate type_ env left cache
+            right' = evaluate type_ env right cache
 
         Syntax.Operator{ operator = Syntax.Plus, .. } ->
             case (left', right') of
@@ -264,8 +267,8 @@ evaluate type_ env syntax =
                 _ ->
                     Value.Operator left' Syntax.Plus right'
           where
-            left'  = evaluate type_ env left
-            right' = evaluate type_ env right
+            left'  = evaluate type_ env left cache
+            right' = evaluate type_ env right cache
 
         Syntax.Builtin{..} ->
             Value.Builtin builtin
@@ -281,33 +284,33 @@ evaluate type_ env syntax =
 {-| This is the function that implements function application, including
     evaluating anonymous functions and evaluating all built-in functions.
 -}
-apply :: Value -> Value -> Type Location -> Value
-apply (Value.Lambda (Closure name capturedEnv body)) argument _ = dbg "apply lambda" $ 
-    evaluate Nothing ((name, argument) : capturedEnv) body
+apply :: Value -> Value -> Type Location -> Maybe (MVar.MVar FetchCache) -> Value
+apply (Value.Lambda (Closure name capturedEnv body)) argument _ cache = dbg "apply lambda" $
+    evaluate Nothing ((name, argument) : capturedEnv) body cache
 apply
     (Value.Merge (Value.Record alternativeHandlers))
-    (Value.Application (Value.Alternative alternative) x) type_
+    (Value.Application (Value.Alternative alternative) x) type_ cache
     | Just f <- HashMap.lookup alternative alternativeHandlers = dbg "apply alternative" $
-        apply f x type_ -- TOOD I'm not sure if type_ is correct here.
+        apply f x type_ cache -- TOOD I'm not sure if type_ is correct here.
 apply
     (Value.Application (Value.Builtin ListDrop) (Value.Scalar (Natural n)))
-    (Value.List elements) _ = dbg "apply ListDrop" $
+    (Value.List elements) _ _ = dbg "apply ListDrop" $
         Value.List (Seq.drop (fromIntegral n) elements)
 apply
     (Value.Application (Value.Builtin ListTake) (Value.Scalar (Natural n)))
-    (Value.List elements) _ =
+    (Value.List elements) _ _ =
         Value.List (Seq.take (fromIntegral n) elements)
-apply (Value.Builtin ListHead) (Value.List []) _ =
+apply (Value.Builtin ListHead) (Value.List []) _ _ =
     Value.Application (Value.Alternative "None") (Value.Record [])
-apply (Value.Builtin ListHead) (Value.List (x :<| _)) _ =
+apply (Value.Builtin ListHead) (Value.List (x :<| _)) _ _ =
     Value.Application (Value.Alternative "Some") x
-apply (Value.Builtin ListLast) (Value.List []) _ =
+apply (Value.Builtin ListLast) (Value.List []) _ _ =
     Value.Application (Value.Alternative "None") (Value.Record [])
-apply (Value.Builtin ListLast) (Value.List (_ :|> x)) _ =
+apply (Value.Builtin ListLast) (Value.List (_ :|> x)) _ _ =
     Value.Application (Value.Alternative "Some") x
-apply (Value.Builtin ListReverse) (Value.List xs) _ =
+apply (Value.Builtin ListReverse) (Value.List xs) _ _ =
     Value.List (Seq.reverse xs)
-apply ((Value.Application (Value.Builtin ListTopNLabels) (Value.Scalar (Natural n)))) (Value.List elems) type_ =
+apply ((Value.Application (Value.Builtin ListTopNLabels) (Value.Scalar (Natural n)))) (Value.List elems) type_ _ =
   dbg "apply ListTopNElements" $
     let
       get_value (Value.Record fields) = case HashMap.lookup "value" fields of
@@ -317,21 +320,21 @@ apply ((Value.Application (Value.Builtin ListTopNLabels) (Value.Scalar (Natural 
       get_value e = error ("get_value called on invalid value " <> show e)
       sorted_elems = List.sortBy (\elemA  elemB -> compare (get_value elemB) (get_value elemA)) $ toList elems
     in Value.List (Seq.fromList (List.take (fromIntegral $ toInteger n) sorted_elems))
-apply (Value.Application (Value.Application (Value.Builtin ListZipWith) f) (Value.List elemsA)) (Value.List elemsB) type_ =
+apply (Value.Application (Value.Application (Value.Builtin ListZipWith) f) (Value.List elemsA)) (Value.List elemsB) type_ cache =
   dbg "apply listzipwith" $
-    Value.List (Seq.zipWith (\a b -> apply (apply f a type_) b type_) elemsA elemsB)
-apply (Value.TritonCall modelName) tensor@(Value.Tensor _ _) _ =
+    Value.List (Seq.zipWith (\a b -> apply (apply f a type_ cache) b type_ cache) elemsA elemsB)
+apply (Value.TritonCall modelName) tensor@(Value.Tensor _ _) _ cache =
   dbg' "apply tritoncall to this tensor: " tensor $
-    unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensor
-apply (Value.TritonCall modelName) tensors@(Value.Record _) _ =
+    unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensor cache
+apply (Value.TritonCall modelName) tensors@(Value.Record _) _ cache =
   dbg' "apply tritoncall to this record: " tensors $
-    unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensors
+    unsafePerformIO $ Triton.normalizeTritonCallApplication modelName tensors cache
 apply
     (Value.Application
         (Value.Application (Value.Builtin ListEqual) f)
         (Value.List rs)
     )
-    (Value.List ls) type_
+    (Value.List ls) type_ cache
         | length ls /= length rs =
             Value.Scalar (Bool False)
         | Just bools <- traverse toBool (Seq.zipWith equal ls rs) =
@@ -340,7 +343,7 @@ apply
         toBool (Value.Scalar (Bool b)) = Just b
         toBool  _                      = Nothing
 
-        equal l r = apply (apply f l type_) r type_ -- TODO: I'm not sure if type_ is correct here.
+        equal l r = apply (apply f l type_ cache) r type_ cache -- TODO: I'm not sure if type_ is correct here.
 apply
     (Value.Application
         (Value.Builtin ListFold)
@@ -352,13 +355,13 @@ apply
             )
         )
     )
-    (Value.List elements) type_ = loop (Seq.reverse elements) nil
+    (Value.List elements) type_ cache = loop (Seq.reverse elements) nil
   where
     loop xs !result =
         case Seq.viewl xs of
             EmptyL  -> result
-            y :< ys -> loop ys (apply (apply cons y type_) result type_) -- TODO: I'm not sure if type_ is right here.
-apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.Image imageBytes)) resultType =
+            y :< ys -> loop ys (apply (apply cons y type_ cache) result type_ cache) -- TODO: I'm not sure if type_ is right here.
+apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.Image imageBytes)) resultType _ =
   case imageToTensor (Img imageBytes) shape of
     Left err -> dbg "unhappy imageToTensor" $ error err
     Right ((width, height), elements) -> dbg "apply imagetotensor" $
@@ -370,7 +373,7 @@ apply (Value.Builtin (ImageToTensor (TensorShape shape))) (Value.Scalar (Syntax.
           [1,3,_,_] -> [1,3, height, width]
           _ -> dbg "bad shape swizzle" $ error ("Don't know what to do to normalize this shape: " <> show shape)
       in dbg "imageToTensor happy" $ Value.Tensor (TensorShape newShape) tensorElements
-apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (TensorShape runtimeShape) elements) resultType =
+apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (TensorShape runtimeShape) elements) resultType _ =
   dbg "apply ImageFromTensor to tensor" $
   let
     floatElements =
@@ -380,9 +383,9 @@ apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (Ten
     Img img = imageFromTensor runtimeShape floatElements
   in
     Value.Scalar (Syntax.Image img)
-apply fun@(Value.Builtin (ImageFromTensor s)) x resultType =
+apply fun@(Value.Builtin (ImageFromTensor s)) x resultType _ =
   dbg' "apply ImageFromTensor to unknown value: " x $ Value.Application fun x
-apply (Value.Builtin ListIndexed) (Value.List elements) _ =
+apply (Value.Builtin ListIndexed) (Value.List elements) _ _ =
     Value.List (Seq.mapWithIndex adapt elements)
   where
     adapt index value =
@@ -390,12 +393,12 @@ apply (Value.Builtin ListIndexed) (Value.List elements) _ =
             [ ("index", Value.Scalar (Natural (fromIntegral index)))
             , ("value", value)
             ]
-apply (Value.Builtin ListLength) (Value.List elements) _ =
+apply (Value.Builtin ListLength) (Value.List elements) _ _ =
     Value.Scalar (Natural (fromIntegral (length elements)))
 apply
     (Value.Application (Value.Builtin ListMap) f)
-    (Value.List elements) type_ =
-        Value.List (fmap (\a -> apply f a type_) elements) -- TODO: I don't think type_ is correct here.
+    (Value.List elements) type_ cache =
+        Value.List (fmap (\a -> apply f a type_ cache) elements) -- TODO: I don't think type_ is correct here.
 apply
     (Value.Application
         (Value.Application
@@ -404,43 +407,43 @@ apply
         )
         succ
     )
-    zero type_ =
+    zero type_ cache =
         go n zero
   where
     go 0 !result = result
-    go m !result = go (m - 1) (apply succ result type_) -- TODO: I don't think type_ is right here.
-apply (Value.Builtin IntegerEven) (Value.Scalar x) _
+    go m !result = go (m - 1) (apply succ result type_ cache) -- TODO: I don't think type_ is right here.
+apply (Value.Builtin IntegerEven) (Value.Scalar x) _ _
     | Just n <- asInteger x = Value.Scalar (Bool (even n))
-apply (Value.Builtin IntegerOdd) (Value.Scalar x) _
+apply (Value.Builtin IntegerOdd) (Value.Scalar x) _ _
     | Just n <- asInteger x = Value.Scalar (Bool (odd n))
 apply
     (Value.Application (Value.Builtin RealEqual) (Value.Scalar l))
-    (Value.Scalar r) _
+    (Value.Scalar r) _ _
     | Just m <- asReal l
     , Just n <- asReal r =
         Value.Scalar (Bool (m == n))
 apply
     (Value.Application (Value.Builtin RealLessThan) (Value.Scalar l))
-    (Value.Scalar r) _
+    (Value.Scalar r) _ _
     | Just m <- asReal l
     , Just n <- asReal r =
         Value.Scalar (Bool (m < n))
-apply (Value.Builtin IntegerAbs) (Value.Scalar x) _
+apply (Value.Builtin IntegerAbs) (Value.Scalar x) _ _
     | Just n <- asInteger x = Value.Scalar (Natural (fromInteger (abs n)))
-apply (Value.Builtin RealNegate) (Value.Scalar x) _
+apply (Value.Builtin RealNegate) (Value.Scalar x) _ _
     | Just n <- asReal x = Value.Scalar (Real (negate n))
-apply (Value.Builtin IntegerNegate) (Value.Scalar x) _
+apply (Value.Builtin IntegerNegate) (Value.Scalar x) _ _
     | Just n <- asInteger x = Value.Scalar (Integer (negate n))
-apply (Value.Builtin RealShow) (Value.Scalar (Natural n)) _ =
+apply (Value.Builtin RealShow) (Value.Scalar (Natural n)) _ _ =
     Value.Scalar (Text (Text.pack (show n)))
-apply (Value.Builtin RealShow) (Value.Scalar (Integer n)) _ =
+apply (Value.Builtin RealShow) (Value.Scalar (Integer n)) _ _ =
     Value.Scalar (Text (Text.pack (show n)))
-apply (Value.Builtin RealShow) (Value.Scalar (Real n)) _ =
+apply (Value.Builtin RealShow) (Value.Scalar (Real n)) _ _ =
     Value.Scalar (Text (Text.pack (show n)))
-apply (Value.Builtin TensorFromList) (Value.List xs) type_ =
+apply (Value.Builtin TensorFromList) (Value.List xs) type_ _ =
   dbg "apply tensorfromlist" $
   case type_ of
-    Tensor _ (Shape { tensorShape = TensorShape dims }) _  ->
+    Tensor _ (Shape { tensorShape = TensorShape dims }) _ ->
       let
         -- TODO: What if the shape contains -1?
         expectedLength = List.foldl' (*) 1 dims
@@ -449,14 +452,14 @@ apply (Value.Builtin TensorFromList) (Value.List xs) type_ =
         then Value.Tensor (TensorShape dims) undefined -- TODO: Fix this
         else error "Dimension mismatch"
     _ -> error $ "Impossible case, application does not results in not a tensor: " <> Text.unpack (renderStrict True 50 type_)
-apply (Value.Builtin TensorToList) (Value.Tensor _ xs) _ =
+apply (Value.Builtin TensorToList) (Value.Tensor _ xs) _ _ =
   dbg "apply tensortolist" $
   case xs of
     Value.TensorIntElements ints -> Value.List (Seq.fromList $ (\x -> Value.Scalar (Syntax.Integer (fromIntegral x))) <$> Vector.toList ints)
     Value.TensorFloatElements floats -> Value.List (Seq.fromList $ (\x -> Value.Scalar (Syntax.Real (realToFrac x))) <$> Vector.toList floats)
 apply
     (Value.Application (Value.Builtin TextEqual) (Value.Scalar (Text l)))
-    (Value.Scalar (Text r)) _ =
+    (Value.Scalar (Text r)) _ _ =
         Value.Scalar (Bool (l == r))
 apply
     (Value.Application
@@ -475,31 +478,31 @@ apply
             )
         )
     )
-    v0 type_ = dbg "apply jsonfold" $ loop v0
+    v0 type_ cache = dbg "apply jsonfold" $ loop v0
   where
     loop (Value.Scalar (Bool b)) =
-        apply boolHandler (Value.Scalar (Bool b)) type_ -- TODO: is _type right here?
+        apply boolHandler (Value.Scalar (Bool b)) type_ cache -- TODO: is _type right here?
     loop (Value.Scalar (Natural n)) =
-        apply naturalHandler (Value.Scalar (Natural n)) type_ -- TODO: is type_ right here?
+        apply naturalHandler (Value.Scalar (Natural n)) type_ cache -- TODO: is type_ right here?
     loop (Value.Scalar (Integer n)) =
-        apply integerHandler (Value.Scalar (Integer n)) type_ -- TODO: type_?
+        apply integerHandler (Value.Scalar (Integer n)) type_ cache -- TODO: type_?
     loop (Value.Scalar (Real n)) =
-        apply realHandler (Value.Scalar (Real n)) type_ -- TODO: Type
+        apply realHandler (Value.Scalar (Real n)) type_ cache -- TODO: Type
     loop (Value.Scalar (Text t)) =
-        apply stringHandler (Value.Scalar (Text t)) type_ -- TODO: Type?
+        apply stringHandler (Value.Scalar (Text t)) type_ cache -- TODO: Type?
     loop (Value.Scalar Null) =
         nullHandler
     loop (Value.List elements) =
-        apply arrayHandler (Value.List (fmap loop elements)) type_ -- TODO: Here type_
+        apply arrayHandler (Value.List (fmap loop elements)) type_ cache -- TODO: Here type_
     loop (Value.Record keyValues) =
-        apply objectHandler (Value.List (Seq.fromList (map adapt (HashMap.toList keyValues)))) type_ -- TODO: type :(
+        apply objectHandler (Value.List (Seq.fromList (map adapt (HashMap.toList keyValues)))) type_ cache -- TODO: type :(
       where
         adapt (key, value) =
             Value.Record
                 [("key", Value.Scalar (Text key)), ("value", loop value)]
     loop v =
         v
-apply function argument _ =
+apply function argument _ _ =
   dbg "apply Application" $
     Value.Application function argument
 
@@ -530,8 +533,9 @@ quote
     -- ^ Variable names currently in scope (starting at @[]@ for a top-level
     --   expression)
     -> Value
+    -> Maybe (MVar.MVar FetchCache)
     -> Syntax () Void
-quote names value =
+quote names value cache =
     case value of
         Value.Variable name index ->
             Syntax.Variable{ index = countNames name names - index - 1, .. }
@@ -541,17 +545,17 @@ quote names value =
           where
             variable = fresh name names
 
-            body = quote (name : names) (instantiate closure variable)
+            body = quote (name : names) (instantiate closure variable cache) cache
 
         Value.Application function argument ->
             Syntax.Application
-                { function = quote names function
-                , argument = quote names argument
+                { function = quote names function cache
+                , argument = quote names argument cache
                 , ..
                 }
 
         Value.List elements ->
-            Syntax.List{ elements = fmap (quote names) elements, .. }
+            Syntax.List{ elements = fmap (\e -> quote names e cache) elements, .. }
 
         Value.Record fieldValues ->
             Syntax.Record
@@ -559,22 +563,22 @@ quote names value =
                 , ..
                 }
           where
-            adapt (field, value_) = (field, quote names value_)
+            adapt (field, value_) = (field, quote names value_ cache)
 
         Value.Field record field ->
-            Syntax.Field{ record = quote names record, fieldLocation = (), .. }
+            Syntax.Field{ record = quote names record cache, fieldLocation = (), .. }
 
         Value.Alternative name ->
             Syntax.Alternative{..}
 
         Value.Merge handlers ->
-            Syntax.Merge{ handlers = quote names handlers, .. }
+            Syntax.Merge{ handlers = quote names handlers cache, .. }
 
         Value.If predicate ifTrue ifFalse ->
             Syntax.If
-                { predicate = quote names predicate
-                , ifTrue = quote names ifTrue
-                , ifFalse = quote names ifFalse
+                { predicate = quote names predicate cache
+                , ifTrue = quote names ifTrue cache
+                , ifFalse = quote names ifFalse cache
                 , ..
                 }
 
@@ -583,9 +587,9 @@ quote names value =
 
         Value.Operator left operator right ->
             Syntax.Operator
-                { left = quote names left
+                { left = quote names left cache
                 , operatorLocation = ()
-                , right = quote names right
+                , right = quote names right cache
                 , ..
                 }
 

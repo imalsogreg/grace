@@ -6,6 +6,8 @@
 
 module Main where
 
+import qualified Control.Concurrent.MVar as MVar
+import qualified Data.Map as Map
 import Control.Applicative (empty)
 import Control.DeepSeq (force)
 import Control.Concurrent.Async (Async)
@@ -279,41 +281,41 @@ toText = Text.pack . JSString.unpack
 fromText :: Text -> JSString
 fromText = JSString.pack . Text.unpack
 
-valueToText :: Value -> Text
-valueToText = Pretty.renderStrict False 80 . Normalize.quote []
+valueToText :: Value -> Maybe (MVar.MVar HTTP.FetchCache) -> Text
+valueToText v cache = Pretty.renderStrict False 80 $ Normalize.quote [] v cache
 
 typeToText :: Type Location -> Text
 typeToText = Pretty.renderStrict False 80
 
 
-renderValue :: IORef Natural -> JSVal -> Type Location -> Value -> IO ()
-renderValue ref parent Type.Forall{ name, nameLocation, domain = Type, type_ } value = do
+renderValue :: IORef Natural -> JSVal -> Type Location -> Value -> Maybe (MVar.MVar HTTP.FetchCache) -> IO ()
+renderValue ref parent Type.Forall{ name, nameLocation, domain = Type, type_ } value cache = do
     -- If an expression has a polymorphic type, specialize the type to JSON
     let json = Type.Scalar{ location = nameLocation, scalar = Monotype.JSON }
 
-    renderValue ref parent (Type.substituteType name 0 json type_) value
+    renderValue ref parent (Type.substituteType name 0 json type_) value cache
 
-renderValue ref parent Type.Forall{ name, domain = Fields, type_ } value = do
+renderValue ref parent Type.Forall{ name, domain = Fields, type_ } value cache = do
     let empty_ = Type.Fields [] EmptyFields
 
-    renderValue ref parent (Type.substituteFields name 0 empty_ type_) value
+    renderValue ref parent (Type.substituteFields name 0 empty_ type_) value cache
 
-renderValue ref parent Type.Forall{ name, domain = Alternatives, type_ } value = do
+renderValue ref parent Type.Forall{ name, domain = Alternatives, type_ } value cache = do
     let empty_ = Type.Alternatives [] EmptyAlternatives
 
-    renderValue ref parent (Type.substituteAlternatives name 0 empty_ type_) value
+    renderValue ref parent (Type.substituteAlternatives name 0 empty_ type_) value cache
 
-renderValue ref parent Type.Optional{ type_ } value =
-    renderValue ref parent type_ value
+renderValue ref parent Type.Optional{ type_ } value cache =
+    renderValue ref parent type_ value cache
 
-renderValue _ parent _ value@Variable{} = do
+renderValue _ parent _ value@Variable{} cache = do
     var <- createElement "var"
 
-    setTextContent var (valueToText value)
+    setTextContent var (valueToText value cache)
 
     replaceChild parent var
 
-renderValue _ parent _ (Value.Scalar (Text text))= do
+renderValue _ parent _ (Value.Scalar (Text text)) _ = do
     span <- createElement "span"
 
     setAttribute span "style" "whitespace: pre"
@@ -322,7 +324,7 @@ renderValue _ parent _ (Value.Scalar (Text text))= do
 
     replaceChild parent span
 
-renderValue _ parent _ (Value.Scalar (Bool bool)) = do
+renderValue _ parent _ (Value.Scalar (Bool bool)) _ = do
     input <- createElement "input"
 
     setAttribute input "type"     "checkbox"
@@ -333,14 +335,14 @@ renderValue _ parent _ (Value.Scalar (Bool bool)) = do
 
     replaceChild parent input
 
-renderValue _ parent _ (Value.Scalar Null) = do
+renderValue _ parent _ (Value.Scalar Null) _ = do
     span <- createElement "span"
 
     setTextContent span "∅"
 
     replaceChild parent span
 
-renderValue _ parent _ (Value.Scalar (Syntax.Image imageInner)) = do
+renderValue _ parent _ (Value.Scalar (Syntax.Image imageInner)) _ = do
   if imageInner == ""
   then
     do
@@ -356,23 +358,23 @@ renderValue _ parent _ (Value.Scalar (Syntax.Image imageInner)) = do
       t1 <- getCurrentTime
       consoleLog $ Text.pack $ "renderValue took: " <> show (diffUTCTime t1 t0)
 
-renderValue _ parent type_ value@Value.Tensor{} = do
+renderValue _ parent type_ value@Value.Tensor{} _ = do
   span <- createElement "span"
   consoleLog "about to typeToText tensor"
   setTextContent span (typeToText type_)
   consoleLog "finished typeToText tensor"
   replaceChild parent span
 
-renderValue _ parent type_ value@Value.Scalar{} = do
+renderValue _ parent type_ value@Value.Scalar{} cache = do
     span <- createElement "span"
 
-    setTextContent span (valueToText value <> " : " <> typeToText type_)
+    setTextContent span (valueToText value cache <> " : " <> typeToText type_)
 
     setAttribute span "style" "whitespace: pre"
 
     replaceChild parent span
 
-renderValue ref parent outer (Value.List values) = do
+renderValue ref parent outer (Value.List values) cache = do
     inner <- case outer of
             Type.List{ type_ } -> do
                 return type_
@@ -386,7 +388,7 @@ renderValue ref parent outer (Value.List values) = do
     lis <- forM values \value -> do
         li <- createElement "li"
 
-        renderValue ref li inner value
+        renderValue ref li inner value cache
 
         return li
 
@@ -396,7 +398,7 @@ renderValue ref parent outer (Value.List values) = do
 
     replaceChild parent ul
 
-renderValue ref parent outer (Value.Record keyValues) = do
+renderValue ref parent outer (Value.Record keyValues) cache = do
     let lookupKey = case outer of
             Type.Record{ fields = Type.Fields keyTypes _ } ->
                 \key -> lookup key keyTypes
@@ -430,7 +432,7 @@ renderValue ref parent outer (Value.Record keyValues) = do
 
             setAttribute dd "class" "col"
 
-            renderValue ref dd type_ value
+            renderValue ref dd type_ value cache
 
             dl <- createElement "dl"
 
@@ -444,7 +446,7 @@ renderValue ref parent outer (Value.Record keyValues) = do
 
     replaceChildren parent (Array.fromList (HashMap.elems dls))
 
-renderValue ref parent outer (Application (Value.Alternative alternative) value) = do
+renderValue ref parent outer (Application (Value.Alternative alternative) value) cache = do
     inner <- case outer of
             Type.Union{ alternatives = Type.Alternatives keyTypes _ } ->
                 case lookup alternative keyTypes of
@@ -462,16 +464,16 @@ renderValue ref parent outer (Application (Value.Alternative alternative) value)
 
     let recordValue = Value.Record (HashMap.singleton alternative value)
 
-    renderValue ref parent recordType recordValue
+    renderValue ref parent recordType recordValue cache
 
-renderValue ref parent Type.Function{ input, output } function = do
+renderValue ref parent Type.Function{ input, output } function cache = do
     result <- Maybe.runMaybeT $ do
       consoleLog ("about to renderInput for input type: " <> typeToText input)
       (renderInput ref input)
 
     case result of
         Nothing -> do
-            renderDefault parent function
+            renderDefault parent function cache
         Just (inputVal, get) -> do
             hr <- createElement "hr"
 
@@ -493,14 +495,14 @@ renderValue ref parent Type.Function{ input, output } function = do
                         consoleLog $ Text.pack $ "fn: " <> show function
                         consoleLog $ Text.pack $ "value: " <> show value
                         consoleLog $ Text.pack $ "outpu: " <> show output
-                        outputValue <- Exception.try $ Exception.evaluate $ Normalize.apply function value output
+                        outputValue <- Exception.try $ Exception.evaluate $ Normalize.apply function value output cache
                         consoleLog $ Text.pack $ "Computed result: " <> show outputValue
                         t1 <- getCurrentTime
                         consoleLog $ Text.pack $ "Normalize took: " <> show (diffUTCTime t1 t0)
                         case outputValue of
                           Right v -> do
                             t0 <- getCurrentTime
-                            renderValue ref outputVal output v
+                            renderValue ref outputVal output v cache
                             t1 <- getCurrentTime
                             consoleLog $ Text.pack $ "renderValue for output took: " <> show (diffUTCTime t1 t0)
                           Left (e :: Exception.SomeException) -> consoleLog ("TRY NORMALIZE FAILURE: " <> Text.pack (show e))
@@ -520,14 +522,14 @@ renderValue ref parent Type.Function{ input, output } function = do
 
             replaceChildren parent (Array.fromList [ inputVal, hr, outputVal ])
 
-renderValue _ parent _ value = do
-    renderDefault parent value
+renderValue _ parent _ value cache = do
+    renderDefault parent value cache
 
-renderDefault :: JSVal -> Value -> IO ()
-renderDefault parent value = do
+renderDefault :: JSVal -> Value -> Maybe (MVar.MVar HTTP.FetchCache) -> IO ()
+renderDefault parent value cache = do
     code <- createElement "code"
 
-    setTextContent code (valueToText value)
+    setTextContent code (valueToText value cache)
 
     replaceChild parent code
 
@@ -1012,6 +1014,8 @@ main = do
 
     tutorialRef <- IORef.newIORef hasTutorial
 
+    cache <- Just <$> MVar.newMVar Map.empty
+
     let setError text = do
             setTextContent error text
 
@@ -1019,7 +1023,7 @@ main = do
             setDisplay error  "block"
 
     let setOutput type_ value = do
-            renderValue counter output type_ value
+            renderValue counter output type_ value cache
 
             typeSpan <- createElement "span"
             setTextContent typeSpan (typeToText type_)
@@ -1059,7 +1063,7 @@ main = do
                 setDisplay error  "block"
 
                 -- result <- Except.runExceptT (Interpret.interpret input_)
-                result <- Except.runExceptT (Interpret.interpretWith tritonContext Nothing manager input_)
+                result <- Except.runExceptT (Interpret.interpretWith tritonContext Nothing manager input_ cache)
 
                 case result of
                     Left interpretError -> do

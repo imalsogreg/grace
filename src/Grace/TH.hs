@@ -96,13 +96,14 @@ typeOfInput = helperFunction fst
 helperFunction
     :: Lift r => ((Type (), Syntax () Void) -> r) -> Input -> Q (TExp r)
 helperFunction f input = do
-    eitherResult <- Except.runExceptT (Interpret.interpret input)
+    let cache = Nothing -- TODO: Is it ok that QQ's don't have a fetch cache?
+    eitherResult <- Except.runExceptT (Interpret.interpret input cache)
 
     (inferred, value) <- case eitherResult of
         Left e -> fail (Exception.displayException e)
         Right result -> return result
 
     let type_ = void inferred
-        syntax = Normalize.quote [] value
+        syntax = Normalize.quote [] value cache
 
     TExp <$> TH.lift (f (type_, syntax))
