@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings  #-}
 
@@ -16,6 +17,8 @@ module Grace.HTTP
 
 import Control.Exception (Exception(..))
 import qualified Control.Exception as Exception
+import Control.DeepSeq (force)
+import Data.Time (getCurrentTime, diffUTCTime)
 import Data.Text (Text)
 import Data.Maybe (fromMaybe, maybe)
 import qualified Data.Map as Map
@@ -60,7 +63,7 @@ fetch _manager url = do
             , reqOptions = Fetch.defaultRequestOptions
             }
 
-    response <- Fetch.fetch request
+    response <- time "fetch" $ Fetch.fetch request
 
     Fetch.responseText response
 
@@ -73,33 +76,35 @@ fetchWithBody
     -> Maybe (MVar.MVar FetchCache)
     -> IO JSString.JSString
     -- ^ Response body
-fetchWithBody _manager url requestBody cacheMVar = do
+fetchWithBody _manager url !requestBody cacheMVar = do
     -- let reqBodyJSString = JSString.pack (BS.unpack requestBody)
-    reqBodyJSString <- (toJSVal requestBody)
+    reqBody <- time "fetchWithBody: force requestBody" $ Exception.evaluate $ force requestBody
+    reqBody' <- time "fetchWithBody: force requestBody again" $ Exception.evaluate $ force reqBody
+    reqBodyJSString <- time "fetchWithBody: toJSVal requestBody" $ toJSVal reqBody'
     consoleLog "evaluate request"
-    let cacheKey = (url, requestBody)
-    cache <- maybe (pure Map.empty) MVar.takeMVar cacheMVar
+    -- let cacheKey = (url, requestBody)
+    -- cache <- maybe (pure Map.empty) MVar.takeMVar cacheMVar
     -- case Map.lookup cacheKey cache of
     case True of
       False -> do
       -- Just resp -> do
         consoleLog "cache hit"
-        maybe (pure ()) (\c -> MVar.putMVar c cache) cacheMVar
+        -- maybe (pure ()) (\c -> MVar.putMVar c cache) cacheMVar
         -- return resp
         undefined
       -- Nothing -> do
       True -> do
         consoleLog "cache miss"
 
-        request <- Exception.evaluate $
+        request <- time "fetchWithBody: compute request" $ Exception.evaluate $
             Request
-                { reqUrl = JSString.pack (Text.unpack url)
+                { reqUrl = force $ JSString.pack (Text.unpack url)
                 , reqOptions = Fetch.defaultRequestOptions { Fetch.reqOptMethod = "POST"
-                                                    , Fetch.reqOptBody = Just reqBodyJSString
+                                                    , Fetch.reqOptBody = force $ Just reqBodyJSString
                                                     }
                 }
         consoleLog ("about to fetch")
-        resp <- Fetch.fetch request
+        resp <- time "fetchWithBody: fetch" $ Fetch.fetch request
         jsString <- Fetch.responseText resp
         -- let respText = Text.pack (JSString.unpack jsString)
         consoleLog ("finished fetch")
@@ -117,3 +122,12 @@ consoleLog t = consoleLog_ (JSString.pack $ Text.unpack t)
 
 foreign import javascript unsafe "console.log($1)"
   consoleLog_ :: JSString -> IO ()
+
+time :: Text -> IO a -> IO a
+time prefix action = do
+  consoleLog ("about to " <> prefix)
+  t0 <- getCurrentTime
+  result <- action
+  t1 <- getCurrentTime
+  consoleLog $ prefix <> " took " <> Text.pack (show (diffUTCTime t1 t0))
+  return result

@@ -15,6 +15,7 @@ module Grace.Triton where
 import qualified Control.Concurrent.MVar as MVar
 import qualified Data.ByteString.Lazy.Char8 (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as ByteStringLazy
+import qualified Data.Vector as Vector
 import Data.Traversable (for)
 import System.IO.Unsafe (unsafePerformIO)
 import Control.DeepSeq (NFData, force)
@@ -187,11 +188,13 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
 -- * Inference
 
 infer :: HTTP.Manager -> Text -> InferenceRequest -> Maybe (MVar.MVar FetchCache) -> IO InferenceResponse
-infer manager modelName inferenceRequest cache = do
+infer manager !modelName !inferenceRequest cache = do
   reqData <- time "INFER: force req data" $ Exception.evaluate $ force inferenceRequest
 
 #ifdef ghcjs_HOST_OS
-  reqBody <- time "INFER: native encode data" $ encodeInferenceRequest reqData
+  reqBody'' <- time "INFER: native encode data" $ force <$> encodeInferenceRequest reqData
+  reqBody' <- time "INFER: pre-force reqBody" $ Exception.evaluate $ force reqBody''
+  reqBody <- time "INFER: pre-force reqBody again" $ Exception.evaluate $ force reqBody'
   -- reqBody <- time "INFER: repackage reqBody" $ Exception.evaluate $ force $ Text.pack (JSString.unpack reqJson)
 #else
   reqBody <- time "INFER: aeson encode data" $ Exception.evaluate $ force $ decodeUtf8 $ toStrict $ encode reqData
@@ -201,7 +204,7 @@ infer manager modelName inferenceRequest cache = do
   res <- time "INFER: HTTP.fetchWithBody" $ HTTP.fetchWithBody manager url reqBody cache
 
 #ifdef ghcjs_HOST_OS
-  resp <- time "infer: native decode response" $ decodeInferenceResponse res
+  resp <- time "infer: native decode response" $ force <$> decodeInferenceResponse res
 #else
   resp <- time "infer: decode response" $ Exception.evaluate $ eitherDecode $ fromStrict $ encodeUtf8 res
 #endif
@@ -223,6 +226,8 @@ instance NFData InferenceRequest
 data InferenceResponse = InferenceResponse
   { outputs :: [TritonTensor] }
   deriving (Eq, Show, Generic)
+
+instance NFData InferenceResponse
 
 instance ToJSON InferenceRequest where
 instance FromJSON InferenceResponse where
@@ -318,7 +323,6 @@ instance FromJSON TritonTensorType where
 listModels :: Manager -> Maybe (MVar.MVar FetchCache) -> IO [ModelMetadata]
 listModels manager cache = do
   resp <- withTritonBaseUrl $ \baseUrl -> HTTP.fetchWithBody manager (baseUrl <> "/v2/repository/index") "" cache
-  let respText =
 #ifdef ghcjs_HOST_OS
   let respText = Text.pack (JSString.unpack resp)
 #else
@@ -375,7 +379,8 @@ conseleLog = putStrLn
 #ifdef ghcjs_HOST_OS
 encodeInferenceRequest :: InferenceRequest -> IO JSString.JSString
 encodeInferenceRequest InferenceRequest { inputs } = do
-  encodedTensors <- traverse encodeTensor inputs
+  inputs' <- time "encodeInferenceReques: force inputs" $ Exception.evaluate $ force inputs
+  encodedTensors <- force <$> traverse encodeTensor inputs
   pure $ "{\"inputs\": [" <> JSString.intercalate "," encodedTensors <> "]}"
 
 encodeTensor :: TritonTensor -> IO JSString.JSString
@@ -392,7 +397,7 @@ foreign import javascript unsafe "JSON.stringify({name: $1, datatype: $2, shape:
   encodeTensor_ :: JSString.JSString -> JSString.JSString -> JSVal -> JSVal -> IO JSString.JSString
 
 decodeInferenceResponse :: JSString.JSString -> IO (Either String InferenceResponse)
-decodeInferenceResponse v = do
+decodeInferenceResponse !v = do
   Just jsTensors :: Maybe [[JSVal]] <- fromJSVal =<< decodeInferenceResponse_ v
   outputs <- for jsTensors $ \jsTensor -> do
     case jsTensor of

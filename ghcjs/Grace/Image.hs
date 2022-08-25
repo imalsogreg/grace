@@ -45,7 +45,7 @@ consoleShow prefix x = consoleLog $ prefix <> " " <> Text.pack (show x)
 foreign import javascript unsafe "$r = new Array(); for (r = 0; r < $1; r++) { for (c = 0; c < $2; c++) { i = c*4 + r * $1 * 4; red = ($3.data)[i]; green = ($3.data)[i+1]; blue = ($3.data)[i+2]; color_sum = red + green + blue; avg = color_sum * 0.001307; ($r).push(avg)};  }"
     imageDataToMonochromeTensor_ :: Int -> Int -> JSVal -> IO JSVal
 
-foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r < $1.height; r++) { for (c = 0; c < w; c++) { i = c*4 + r * w * 4; d = $1.data; ($r).push(d[i] * 0.001307); ($r).push(d[i+1] * 0.001307); ($r).push(d[i+2] * 0.001307) }  };"
+foreign import javascript unsafe "$r = new Array(); w = $1.width; for (r = 0; r < $1.height; r++) { for (c = 0; c < w; c++) { i = c*4 + r * w * 4; d = $1.data; ($r).push(d[i] * 0.003921); ($r).push(d[i+1] * 0.003921); ($r).push(d[i+2] * 0.003921) }  };"
     imageDataToPixelMajorTensor_ :: JSVal -> IO JSVal
 
 foreign import javascript unsafe "ctx = $1.getContext('2d'); iData = ctx.getImageData(0,0,$3,$4); d = iData.data; for (r = 0; r < $4; r++) { for (c = 0; c < $3; c++) { i = c * 3 + r * $3 * 3; j = c * 4 + r * $3 * 4; d[j] = ($2)[i] * 255; d[j+1] = ($2)[i+1] * 255; d[j+2] = ($2)[i+2] * 255; d[j+3] = 255; }}; iData.data = d; ctx.putImageData(iData,0,0);"
