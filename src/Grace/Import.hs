@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE RecordWildCards    #-}
@@ -39,7 +40,16 @@ import qualified System.Environment as Environment
 import qualified System.IO.Unsafe as Unsafe
 import qualified Text.URI as URI
 
+
+#ifdef ghcjs_HOST_OS
+import qualified Data.JSString as JSString
+#endif
+
+#ifdef ghcjs_HOST_OS
+cache :: IORef (HashMap Text JSString.JSString)
+#else
 cache :: IORef (HashMap Text Text)
+#endif
 cache = Unsafe.unsafePerformIO (IORef.newIORef HashMap.empty)
 {-# NOINLINE cache #-}
 
@@ -47,15 +57,18 @@ fetch :: Manager -> Text -> IO Text
 fetch manager url = do
     m <- IORef.readIORef cache
 
-    case HashMap.lookup url m of
+    body <- case HashMap.lookup url m of
         Nothing -> do
             body  <- HTTP.fetch manager url
-
             IORef.writeIORef cache $! HashMap.insert url body m
-
             return body
         Just body -> do
             return body
+#ifdef ghcjs_HOST_OS
+    return (Text.pack (JSString.unpack body))
+#else
+    return body
+#endif
 
 -- | Resolve an `Input` by returning the source code that it represents
 resolve :: Manager -> Input -> IO (Syntax Location Input)
@@ -174,10 +187,7 @@ data ImportError = ImportError
 instance Exception ImportError where
     displayException ImportError{..} =
         Text.unpack
-            ("Import resolution failed: " <> renderedInput <> "\n\
-            \\n\
-            \" <> renderedError
-            )
+            ("Import resolution failed: " <> renderedInput <> "\n\n" <> renderedError)
       where
         renderedInput = case input of
             URI  uri  -> URI.render uri
@@ -195,9 +205,7 @@ instance Exception ImportError where
             MissingPath ->
                 "Missing path"
             ReferentiallyInsane child ->
-                "Local imports are rejected within remote imports\n\
-                \\n\
-                \Rejected local import: " <> Text.pack (show (Pretty.pretty child))
+                "Local imports are rejected within remote imports\n\nRejected local import: " <> Text.pack (show (Pretty.pretty child))
             UnsupportedPathSeparators ->
                 "Unsupported path separators"
             UnsupportedAuthority ->

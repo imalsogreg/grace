@@ -8,10 +8,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Grace.Triton where
 
 import qualified Control.Concurrent.MVar as MVar
+import qualified Data.ByteString.Lazy.Char8 (ByteString)
+import qualified Data.ByteString.Lazy.Char8 as ByteStringLazy
+import Data.Traversable (for)
 import System.IO.Unsafe (unsafePerformIO)
 import Control.DeepSeq (NFData, force)
 import qualified Control.Exception as Exception
@@ -26,7 +30,7 @@ import Data.Traversable (forM)
 import qualified Data.HashMap.Strict.InsOrd as InsOrdHashMap
 import Data.Sequence (fromList)
 import qualified Data.Vector as Vector
-import Data.Scientific (Scientific)
+import Data.Scientific (Scientific, toRealFloat)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text (Text, unpack)
 import Data.Aeson (eitherDecode, withObject, (.:), encode, object, FromJSON(..), ToJSON(..), (.=), withText)
@@ -43,6 +47,8 @@ import qualified Grace.Monotype as Monotype
 import System.Environment (lookupEnv)
 
 #ifdef ghcjs_HOST_OS
+import GHCJS.Types (JSVal)
+import GHCJS.Marshal (toJSVal, fromJSVal)
 import qualified Data.JSString as JSString
 #endif
 
@@ -118,13 +124,17 @@ reifyIntElement v = GraceValue.Scalar (GraceSyntax.Integer (round v))
 -- | Helper functions for normalizaTritonCallApplication
 lowerTensorValue :: Text -> GraceValue.Value -> TritonTensor
 lowerTensorValue !inputTensorName !t =
-  unsafePerformIO $ time ("lowerTensorValue " <> inputTensorName) $ Exception.evaluate $ force $
+  unsafePerformIO $ time ("lowerTensorValue " <> inputTensorName) $
     case t of
       GraceValue.Tensor (Monotype.TensorShape shape) elements -> do
         (datatype, xs) <-
               case elements of
                 GraceValue.TensorIntElements ints -> pure (INT64, undefined)
-                GraceValue.TensorFloatElements floats -> pure (FP32, fmap realToFrac (Vector.toList floats))
+                GraceValue.TensorFloatElements floats -> do
+                  floatsList <- time "floats to list" $ Exception.evaluate $ force $ Vector.toList floats
+                  tensorData <- time "fmap realToFrac" $ Exception.evaluate $ force $ fmap realToFrac floatsList
+                  pure (FP32, tensorData)
+
         pure $ TritonTensor { tensorName = inputTensorName
                       , datatype
                       , shape = shape
@@ -179,19 +189,23 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
 infer :: HTTP.Manager -> Text -> InferenceRequest -> Maybe (MVar.MVar FetchCache) -> IO InferenceResponse
 infer manager modelName inferenceRequest cache = do
   reqData <- time "INFER: force req data" $ Exception.evaluate $ force inferenceRequest
-  reqJson <- time "INFER: aeson encode data" $ Exception.evaluate $ force $ encode reqData
-  reqBody <- time "INFER: utf8 process" $ Exception.evaluate (decodeUtf8 $ toStrict $ reqJson)
-  putStrLn "infer: compute url"
+
+#ifdef ghcjs_HOST_OS
+  reqBody <- time "INFER: native encode data" $ encodeInferenceRequest reqData
+  -- reqBody <- time "INFER: repackage reqBody" $ Exception.evaluate $ force $ Text.pack (JSString.unpack reqJson)
+#else
+  reqBody <- time "INFER: aeson encode data" $ Exception.evaluate $ force $ decodeUtf8 $ toStrict $ encode reqData
+#endif
+
   url <- withTritonBaseUrl $ \baseUrl -> pure $  baseUrl <> "/v2/models/" <> modelName <> "/infer"
-  -- putStrLn "infer: about to fetch with this request:"
-  -- print inferenceRequest
-  putStrLn "infer: fetchWithBody"
-  putStrLn "infer: fetchWithBody"
   res <- time "INFER: HTTP.fetchWithBody" $ HTTP.fetchWithBody manager url reqBody cache
-  -- putStrLn "infer: finished fetch with this response:"
-  -- print res
-  putStrLn ("infer: decode response")
+
+#ifdef ghcjs_HOST_OS
+  resp <- time "infer: native decode response" $ decodeInferenceResponse res
+#else
   resp <- time "infer: decode response" $ Exception.evaluate $ eitherDecode $ fromStrict $ encodeUtf8 res
+#endif
+
   case resp of
     Right inferenceResponse -> do
       consoleLog "infer: Got good response"
@@ -217,7 +231,7 @@ data TritonTensor = TritonTensor
   { tensorName :: Text
   , datatype :: DataType
   , shape :: [Int]
-  , data_ :: [Scientific]
+  , data_ :: [Float]
   }
   deriving (Eq, Show, Generic)
 
@@ -304,11 +318,22 @@ instance FromJSON TritonTensorType where
 listModels :: Manager -> Maybe (MVar.MVar FetchCache) -> IO [ModelMetadata]
 listModels manager cache = do
   resp <- withTritonBaseUrl $ \baseUrl -> HTTP.fetchWithBody manager (baseUrl <> "/v2/repository/index") "" cache
-  let (Right (repositoryResponse :: [RepositoryModel])) = eitherDecode (fromStrict $ encodeUtf8 resp)
+  let respText =
+#ifdef ghcjs_HOST_OS
+  let respText = Text.pack (JSString.unpack resp)
+#else
+  let respText = resp
+#endif
+  let (Right (repositoryResponse :: [RepositoryModel])) = eitherDecode (fromStrict $ encodeUtf8 respText)
   let modelNames = modelName <$> repositoryResponse
   forM modelNames $ \modelName -> do
     modelResp <- withTritonBaseUrl $ \baseUrl -> HTTP.fetch manager (baseUrl <> "/v2/models/" <> modelName)
-    let (Right modelMetadata) = eitherDecode . fromStrict . encodeUtf8 $ modelResp
+#ifdef ghcjs_HOST_OS
+    let modelRespText = Text.pack (JSString.unpack modelResp)
+#else
+    let modelRespText = modelResp
+#endif
+    let (Right modelMetadata) = eitherDecode . fromStrict . encodeUtf8 $ modelRespText
     return modelMetadata
 
 
@@ -345,4 +370,44 @@ foreign import javascript unsafe "console.log($1)"
   consoleLog_ :: JSString.JSString -> IO ()
 #else
 conseleLog = putStrLn
+#endif
+
+#ifdef ghcjs_HOST_OS
+encodeInferenceRequest :: InferenceRequest -> IO JSString.JSString
+encodeInferenceRequest InferenceRequest { inputs } = do
+  encodedTensors <- traverse encodeTensor inputs
+  pure $ "{\"inputs\": [" <> JSString.intercalate "," encodedTensors <> "]}"
+
+encodeTensor :: TritonTensor -> IO JSString.JSString
+encodeTensor TritonTensor { tensorName, datatype, shape, data_ } = do
+  let name = JSString.pack $ Text.unpack tensorName
+  let encodedDatatype = JSString.pack (show datatype)
+  jsShape <- toJSVal shape
+  jsData <- toJSVal data_
+  encodeTensor_ (JSString.pack (Text.unpack tensorName)) encodedDatatype jsShape jsData
+  --  pure $ "{\"name\":" <>  name <> ",\"shape\":" <> JSString.pack (show shape) <> ",\"datatype\":" <> encodedDatatype <> ",\"data\":" <> show jsData
+
+-- TODO: Might not need to speficy the key order...
+foreign import javascript unsafe "JSON.stringify({name: $1, datatype: $2, shape: $3, data: $4}, [\"name\",\"shape\", \"datatype\",  \"data\"])"
+  encodeTensor_ :: JSString.JSString -> JSString.JSString -> JSVal -> JSVal -> IO JSString.JSString
+
+decodeInferenceResponse :: JSString.JSString -> IO (Either String InferenceResponse)
+decodeInferenceResponse v = do
+  Just jsTensors :: Maybe [[JSVal]] <- fromJSVal =<< decodeInferenceResponse_ v
+  outputs <- for jsTensors $ \jsTensor -> do
+    case jsTensor of
+      [jsName, jsShape, jsDatatype, jsData] -> do
+        Just tensorName <- fromJSVal jsName
+        Just shape <- fromJSVal jsShape
+        datatype <- fromJSVal @String jsDatatype >>= \case
+              Just "INT64" -> pure INT64
+              Just "FP32" -> pure FP32
+              _ -> error "invalid datatype" -- TODO: error handling
+        Just data_ <- fromJSVal jsData
+        pure $ TritonTensor { tensorName, shape, datatype, data_ }
+  pure $ Right $ InferenceResponse { outputs }
+
+foreign import javascript unsafe "JSON.parse($1).outputs.map(function(t) {[t.name, t.shape, t.datatype, t.data]})"
+  decodeInferenceResponse_ :: JSString.JSString -> IO JSVal
+
 #endif

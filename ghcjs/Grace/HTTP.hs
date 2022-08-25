@@ -52,7 +52,7 @@ fetch
     :: Manager
     -> Text
     -- ^ URL
-    -> IO Text
+    -> IO JSString.JSString
     -- ^ Response body
 fetch _manager url = do
     let request = Request
@@ -62,17 +62,16 @@ fetch _manager url = do
 
     response <- Fetch.fetch request
 
-    jsString <- Fetch.responseText response
-
-    return (Text.pack (JSString.unpack jsString))
+    Fetch.responseText response
 
 fetchWithBody
     :: Manager
     -> Text
-    -> Text
+    -- ^ URL
+    -> JSString.JSString
     -- ^ Request body
     -> Maybe (MVar.MVar FetchCache)
-    -> IO Text
+    -> IO JSString.JSString
     -- ^ Response body
 fetchWithBody _manager url requestBody cacheMVar = do
     -- let reqBodyJSString = JSString.pack (BS.unpack requestBody)
@@ -80,12 +79,16 @@ fetchWithBody _manager url requestBody cacheMVar = do
     consoleLog "evaluate request"
     let cacheKey = (url, requestBody)
     cache <- maybe (pure Map.empty) MVar.takeMVar cacheMVar
-    case Map.lookup cacheKey cache of
-      Just resp -> do
+    -- case Map.lookup cacheKey cache of
+    case True of
+      False -> do
+      -- Just resp -> do
         consoleLog "cache hit"
         maybe (pure ()) (\c -> MVar.putMVar c cache) cacheMVar
-        return resp
-      Nothing -> do
+        -- return resp
+        undefined
+      -- Nothing -> do
+      True -> do
         consoleLog "cache miss"
 
         request <- Exception.evaluate $
@@ -98,10 +101,10 @@ fetchWithBody _manager url requestBody cacheMVar = do
         consoleLog ("about to fetch")
         resp <- Fetch.fetch request
         jsString <- Fetch.responseText resp
-        let respText = Text.pack (JSString.unpack jsString)
+        -- let respText = Text.pack (JSString.unpack jsString)
         consoleLog ("finished fetch")
-        maybe (pure ()) (\c -> MVar.putMVar c (Map.insert cacheKey respText cache)) cacheMVar
-        return respText
+        -- maybe (pure ()) (\c -> MVar.putMVar c (Map.insert cacheKey respText cache)) cacheMVar
+        return jsString
 
 
 -- | Render an `HttpException` as `Text`
