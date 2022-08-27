@@ -55,12 +55,24 @@ import qualified Data.JSString as JSString
 
 -- * Triton Grace primitives
 
+-- | Produce a record with one field for each triton model.
 loadContext :: IO ( [(Text, GraceType.Type Location, GraceValue.Value)])
 loadContext = do
   manager <- HTTP.newManager
   cache <- MVar.newMVar Map.empty
   models <- listModels manager (Just cache)
-  return $ tritonPrimitivesForModel <$> models
+  let modelPrimitives = tritonPrimitivesForModel <$> models
+  let tritonValue = GraceValue.Record $ InsOrdHashMap.fromList $ fmap (\(name, _, val) -> (name, val)) modelPrimitives
+  let tritonType = GraceType.Record
+                    { location = Location
+                                   { name = "triton"
+                                   , code = "<triton_server>"
+                                   , offset = Offset 0
+                                   }
+                    , fields = GraceType.Fields (fmap (\(name, type_, _) -> (name, type_)) modelPrimitives) Monotype.EmptyFields
+                    }
+  pure $ [("triton", tritonType, tritonValue)]
+
 
 time :: Text -> IO a -> IO a
 time prefix action = do
@@ -72,7 +84,7 @@ time prefix action = do
   return result
 
 normalizeTritonCallApplication :: Text -> GraceValue.Value -> Maybe (MVar.MVar FetchCache) -> IO GraceValue.Value
-normalizeTritonCallApplication prefixedModelName lazyValue cache = do
+normalizeTritonCallApplication modelName lazyValue cache = do
   putStrLn "new http manager"
   manager <- time "HTTP.newManager" HTTP.newManager
 
@@ -87,7 +99,7 @@ normalizeTritonCallApplication prefixedModelName lazyValue cache = do
   let
 
     -- This also only works for single-input, single-output models.
-    Just model = find (\ModelMetadata {mmName = name} -> "triton_" <> name ==  prefixedModelName) models
+    Just model = find (\ModelMetadata {mmName = name} -> name ==  modelName) models
     -- let inputTensorNamesAndShapes = mmInputs model
 
   value <- time "force the value" $ Exception.evaluate $ force lazyValue
@@ -156,7 +168,7 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
   let
     location = Location
       { name = "triton"
-      , code = "http"
+      , code = "<triton_server>"
       , offset = Offset 0
       }
     reifyTensor (TritonTensorType { tvtName, tvtShape }) = (tvtName, GraceType.Tensor
@@ -182,7 +194,7 @@ tritonPrimitivesForModel ModelMetadata { mmName, mmInputs, mmOutputs } =
     type_ = GraceType.Function
       { input = inputType, output = outputType, .. }
   in
-    ("triton_" <> mmName, type_, GraceValue.TritonCall ("triton_" <> mmName))
+    (mmName, type_, GraceValue.TritonCall mmName)
 
 
 -- * Inference
@@ -373,7 +385,7 @@ consoleLog = consoleLog_ . JSString.pack . Text.unpack
 foreign import javascript unsafe "console.log($1)"
   consoleLog_ :: JSString.JSString -> IO ()
 #else
-conseleLog = putStrLn
+consoleLog = putStrLn . Text.unpack
 #endif
 
 #ifdef ghcjs_HOST_OS
