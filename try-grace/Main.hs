@@ -987,6 +987,7 @@ main :: IO ()
 main = do
     input         <- getElementById "input"
     output        <- getElementById "output"
+    type_         <- getElementById "type"
     error         <- getElementById "error"
     info          <- getElementById "info"
     startTutorial <- getElementById "start-tutorial"
@@ -1022,11 +1023,11 @@ main = do
             setDisplay output "none"
             setDisplay error  "block"
 
-    let setOutput type_ value = do
-            renderValue counter output type_ value cache
+    let setOutput vType_ value = do
+            renderValue counter output vType_ value cache
 
-            typeSpan <- createElement "span"
-            setTextContent typeSpan (typeToText type_)
+            -- typeSpan <- createElement "span"
+            setTextContent type_ (typeToText vType_)
 
             setDisplay error  "none"
             setDisplay output "block"
