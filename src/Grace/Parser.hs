@@ -87,6 +87,9 @@ terminal match = Earley.terminal match'
 label :: Parser r Text
 label = terminal matchLabel
 
+externalInput :: Parser r Input
+externalInput = fmap Path (terminal matchFile) <|> fmap URI (terminal matchURI)
+
 alternative :: Parser r Text
 alternative = terminal matchAlternative
 
@@ -475,6 +478,11 @@ grammar = mdo
                 shapeElements <- int' `sepBy` token Lexer.Comma
                 token Lexer.CloseBracket
                 return Syntax.Builtin{ builtin = Syntax.ImageFromTensor (Monotype.TensorShape shapeElements), .. }
+
+        <|> do  location <- locatedToken Lexer.Tokenize
+                token Lexer.At
+                source <- externalInput
+                return Syntax.Builtin { builtin = Syntax.Tokenize source, .. }
 
         <|> do  location <- locatedToken Lexer.IntegerAbs
 

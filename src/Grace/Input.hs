@@ -1,12 +1,19 @@
 -- | This module contains the functions and types that power to URI-base imports
+
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DeriveLift            #-}
+
 module Grace.Input
     ( -- * Input
       Input(..)
     ) where
 
+import Control.DeepSeq (NFData)
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Text (Text)
+import GHC.Generics (Generic)
 import Grace.Pretty (Pretty(..))
+import Language.Haskell.TH.Syntax (Lift)
 import System.FilePath ((</>))
 
 import qualified Data.Text as Text
@@ -25,7 +32,9 @@ data Input
     | Code String Text
     -- ^ Source code: @Code name content@
     | URI URI.URI
-    deriving (Eq, Show)
+    deriving (Eq, Generic, Show, Lift)
+
+instance NFData Input
 
 instance Semigroup Input where
     _ <> URI uri = URI uri

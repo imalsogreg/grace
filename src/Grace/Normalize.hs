@@ -30,6 +30,8 @@ import Data.Void (Void)
 import Data.Foldable (toList)
 import Debug.Trace (trace, traceShowId)
 import Grace.Location (Location)
+import qualified Grace.Import as Import
+import qualified Grace.Input as Input
 import Grace.Infer (typeOf)
 import qualified Data.Vector as Vector
 import Grace.Image (Img(..), imageToTensor, imageFromTensor)
@@ -383,6 +385,8 @@ apply (Value.Builtin (ImageFromTensor (TensorShape shape))) x@(Value.Tensor (Ten
     Img img = imageFromTensor runtimeShape floatElements
   in
     Value.Scalar (Syntax.Image img)
+apply (Value.Builtin (Tokenize input)) (Value.Scalar (Syntax.Text text)) _ _ =
+  unsafePerformIO $ tokenizeWithVocabulary input text
 apply fun@(Value.Builtin (ImageFromTensor s)) x resultType _ =
   dbg' "apply ImageFromTensor to unknown value: " x $ Value.Application fun x
 apply (Value.Builtin ListIndexed) (Value.List elements) _ _ =
@@ -603,6 +607,24 @@ quote names value cache =
           Syntax.Variable { index = 0, .. }
   where
     location = ()
+
+tokenizeWithVocabulary :: Input.Input -> Text -> IO Value
+tokenizeWithVocabulary vocabularySource source = do
+#ifdef ghcjs_HOST_OS
+  vocabulary <- Import.fetch vocabularySource >>= parseVocabulary_
+  tokenValues <- traverse (lookupVocabulary_ . JSString.pack . Text.unpack) (Text.words source)
+  pure $ Value.Tensor (Monotype.TensorShape [1, length tokenValues] ) (Monotype.TensorIntElements (Vector.fromList tokenValues))
+#else
+  undefined
+#endif
+
+#ifdef ghcjs_HOST_OS
+foreign import javascript unsafe "JSON.parse($1)"
+  parseVocabulary_ :: JSString.JSString -> JSVal
+
+foreign import javascript unsafe "r = ($1)[$2] || 0"
+  lookupVocabulary_ :: JSVal -> JSString.JSString -> Int
+#endif
 
 #ifdef ghcjs_HOST_OS
 foreign import javascript unsafe "console.log($1)"

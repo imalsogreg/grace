@@ -10,6 +10,7 @@ module Grace.Import
       -- * Exceptions
     , ResolutionError(..)
     , ImportError(..)
+    , fetch
     ) where
 
 import Control.Exception.Safe (Exception(..))
@@ -53,7 +54,11 @@ cache :: IORef (HashMap Text Text)
 cache = Unsafe.unsafePerformIO (IORef.newIORef HashMap.empty)
 {-# NOINLINE cache #-}
 
+#if ghcjs_HOST_OS
+fetch :: Manager -> Text -> IO JSString.JSString
+#else
 fetch :: Manager -> Text -> IO Text
+#endif
 fetch manager url = do
     m <- IORef.readIORef cache
 
@@ -64,11 +69,7 @@ fetch manager url = do
             return body
         Just body -> do
             return body
-#ifdef ghcjs_HOST_OS
-    return (Text.pack (JSString.unpack body))
-#else
     return body
-#endif
 
 -- | Resolve an `Input` by returning the source code that it represents
 resolve :: Manager -> Input -> IO (Syntax Location Input)

@@ -37,6 +37,7 @@ import Data.String.Interpolate ()  -- For an orphan instance for Lift (Seq a)
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Grace.Pretty (Pretty(..), keyword, label, punctuation)
+import Grace.Input (Input)
 import qualified Grace.Monotype as Monotype
 import Grace.Type (Type)
 import Language.Haskell.TH.Syntax (Lift)
@@ -416,6 +417,7 @@ data Builtin
     --   Text/equal
     | TensorFromList
     | TensorToList
+    | Tokenize Input
     deriving (Eq, Generic, Lift, Show)
 
 instance NFData Builtin
@@ -448,6 +450,7 @@ instance Pretty Builtin where
     pretty TextEqual      = Pretty.builtin "Text/equal"
     pretty TensorFromList = Pretty.builtin "Tensor/fromList"
     pretty TensorToList   = Pretty.builtin "Tensor/toList"
+    pretty (Tokenize input) = Pretty.builtin "tokenize @" <> pretty input
 
 -- | Pretty-print an expression
 prettyExpression :: Pretty a => Syntax s a -> Doc AnsiStyle

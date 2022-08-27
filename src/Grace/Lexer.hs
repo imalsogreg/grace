@@ -501,6 +501,7 @@ data Token
     | TextLiteral Text
     | Then
     | Times
+    | Tokenize
     | True_
     | Type
     | URI URI.URI

@@ -1986,6 +1986,19 @@ infer e0 = do
                 , ..
                 }
 
+        Syntax.Builtin{ builtin = Syntax.Tokenize _, .. } -> do
+          return
+            Type.Forall
+              { nameLocation = Syntax.location e0
+              , name = "shape"
+              , domain = Domain.Type
+              , type_ =
+                Type.Scalar { scalar = Monotype.Text, .. } ~>
+                Type.Tensor { type_ = Type.Scalar { scalar = Monotype.Integer, .. }, shape = var "shape", .. }
+              , ..
+              }
+
+
         Syntax.Embed{ embedded = (type_, _) } -> do
             return type_
 
