@@ -142,7 +142,7 @@ lowerTensorValue !inputTensorName !t =
       GraceValue.Tensor (Monotype.TensorShape shape) elements -> do
         (datatype, xs) <-
               case elements of
-                GraceValue.TensorIntElements ints -> pure (INT64, undefined)
+                GraceValue.TensorIntElements ints -> pure (INT64, realToFrac <$> Vector.toList ints)
                 GraceValue.TensorFloatElements floats -> do
                   floatsList <- time "floats to list" $ Exception.evaluate $ force $ Vector.toList floats
                   tensorData <- time "fmap realToFrac" $ Exception.evaluate $ force $ fmap realToFrac floatsList

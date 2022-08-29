@@ -28,6 +28,7 @@ import Control.Applicative (many, optional, some, (<|>))
 import Control.Applicative.Combinators (endBy, sepBy)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Data.Functor (void, ($>))
+import qualified Data.Maybe as Maybe
 import Data.List.NonEmpty (NonEmpty(..), some1)
 import Data.Scientific (Scientific)
 import Data.Text (Text)
@@ -225,6 +226,7 @@ render t = case t of
     Lexer.Or               -> "||"
     Lexer.Plus             -> "+"
     Lexer.Tensor           -> "Tensor"
+    Lexer.TensorIndex      -> "!!"
     Lexer.TensorFromList   -> "Tensor/fromList"
     Lexer.TensorToList     -> "Tensor/toList"
     Lexer.Text             -> "Text"
@@ -293,7 +295,9 @@ grammar = mdo
 
             return (foldl snoc e0 ses)
 
-    timesExpression <- rule (op Lexer.Times Syntax.Times plusExpression)
+    timesExpression <- rule (op Lexer.Times Syntax.Times indexExpression)
+
+    indexExpression <- rule (op Lexer.TensorIndex Syntax.TensorIndex plusExpression)
 
     plusExpression <- rule (op Lexer.Plus Syntax.Plus orExpression)
 

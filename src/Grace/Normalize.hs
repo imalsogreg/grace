@@ -20,6 +20,7 @@ module Grace.Normalize
 import qualified Control.Concurrent.MVar as MVar
 import Grace.HTTP (FetchCache)
 import Data.Scientific (Scientific)
+import Data.Foldable (toList)
 import qualified Control.Exception as Exception
 import Control.DeepSeq (NFData, force)
 import Data.Time (getCurrentTime, diffUTCTime)
@@ -30,6 +31,7 @@ import Data.Void (Void)
 import Data.Foldable (toList)
 import Debug.Trace (trace, traceShowId)
 import Grace.Location (Location)
+import qualified Grace.HTTP as HTTP
 import qualified Grace.Import as Import
 import qualified Grace.Input as Input
 import Grace.Infer (typeOf)
@@ -43,6 +45,7 @@ import Grace.Pretty (renderStrict)
 import Grace.Value (Closure(..), Value)
 import Prelude hiding (succ)
 import System.IO.Unsafe (unsafePerformIO)
+import qualified Text.URI as URI
 
 import qualified Data.HashMap.Strict.InsOrd as HashMap
 import qualified Data.List as List
@@ -56,6 +59,7 @@ import qualified Grace.Value as Value
 import Data.JSString (JSString)
 import qualified Data.JSString as JSString
 import qualified Data.JSString.Text as JSString
+import GHCJS.Types (JSVal)
 #endif
 
 {- $setup
@@ -132,7 +136,7 @@ evaluate
 evaluate type_ env syntax cache =
     dbg' "evaluate" syntax $
     case syntax of
-        Syntax.Variable{..} ->            lookupVariable name index env
+        Syntax.Variable{..} -> lookupVariable name index env
 
         Syntax.Application{..} -> apply function' argument' (appType) cache
           where
@@ -271,6 +275,31 @@ evaluate type_ env syntax cache =
           where
             left'  = evaluate type_ env left cache
             right' = evaluate type_ env right cache
+
+        Syntax.Operator{ operator = Syntax.TensorIndex, .. } ->
+          case (left', right') of
+            (Value.Tensor (TensorShape shape) tensorElems, Value.List list) ->
+              if length shape == length list
+              then
+                let
+                  indexElems :: [Int]
+                  indexElems = fmap (\v -> case v of
+                                        Value.Scalar (Natural i) -> fromIntegral i
+                                        Value.Scalar (Integer i) -> fromIntegral i
+                                    ) (toList list)
+                  posShift :: [Int] -> [Int]
+                  posShift = tail . reverse . scanl (*) 1 . reverse
+                  ind = List.foldl' (+) 0 (zipWith (*) (posShift shape) indexElems)
+                in case tensorElems of
+                  Value.TensorIntElements ints -> Value.Scalar (Integer $ fromIntegral $ ints Vector.! ind)
+                  Value.TensorFloatElements floats -> Value.Scalar (Real $ realToFrac $ floats Vector.! ind)
+              else
+                error "Incompatible index elements"
+            _ ->
+              Value.Operator left' Syntax.TensorIndex right'
+         where
+           left' = evaluate type_ env left cache
+           right' = evaluate type_ env left cache
 
         Syntax.Builtin{..} ->
             Value.Builtin builtin
@@ -609,21 +638,23 @@ quote names value cache =
     location = ()
 
 tokenizeWithVocabulary :: Input.Input -> Text -> IO Value
-tokenizeWithVocabulary vocabularySource source = do
+tokenizeWithVocabulary (Input.URI vocabularySource) text = do
 #ifdef ghcjs_HOST_OS
-  vocabulary <- Import.fetch vocabularySource >>= parseVocabulary_
-  tokenValues <- traverse (lookupVocabulary_ . JSString.pack . Text.unpack) (Text.words source)
-  pure $ Value.Tensor (Monotype.TensorShape [1, length tokenValues] ) (Monotype.TensorIntElements (Vector.fromList tokenValues))
+  manager <- HTTP.newManager
+  vocabulary <- Import.fetch manager (URI.render vocabularySource) >>= parseVocabulary_
+  tokenValues <- traverse (lookupVocabulary_ vocabulary . JSString.pack . Text.unpack) (Text.words text)
+  consoleLog (Text.pack $ "tokize: " <>  show tokenValues)
+  pure $ Value.Tensor (TensorShape [1, length tokenValues] ) (Value.TensorIntElements (Vector.fromList tokenValues))
 #else
   undefined
 #endif
 
 #ifdef ghcjs_HOST_OS
 foreign import javascript unsafe "JSON.parse($1)"
-  parseVocabulary_ :: JSString.JSString -> JSVal
+  parseVocabulary_ :: JSString.JSString -> IO JSVal
 
-foreign import javascript unsafe "r = ($1)[$2] || 0"
-  lookupVocabulary_ :: JSVal -> JSString.JSString -> Int
+foreign import javascript unsafe "($1)[\"Ġ\" + $2] || 0"
+  lookupVocabulary_ :: JSVal -> JSString.JSString -> IO Int
 #endif
 
 #ifdef ghcjs_HOST_OS

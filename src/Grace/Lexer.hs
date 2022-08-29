@@ -85,6 +85,7 @@ parseToken =
             , And    <$ symbol "&&"
             , Plus   <$ symbol "+"
             , Times  <$ symbol "*"
+            , TensorIndex  <$ symbol "!!"
             ] <?> "operator"
 
         , Combinators.choice
@@ -129,6 +130,7 @@ parseToken =
             , TextEqual      <$ symbol "Text/equal"
             , TensorFromList <$ symbol "Tensor/fromList"
             , TensorToList <$ symbol "Tensor/toList"
+            , Tokenize       <$ symbol "Text/tokenize"
             , False_         <$ symbol "false"
             , True_          <$ symbol "true"
             , Null           <$ symbol "null"
@@ -494,6 +496,7 @@ data Token
     | Or
     | Plus
     | Tensor
+    | TensorIndex
     | TensorFromList
     | TensorToList
     | Text

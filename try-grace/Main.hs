@@ -358,10 +358,10 @@ renderValue _ parent _ (Value.Scalar (Syntax.Image imageInner)) _ = do
       t1 <- getCurrentTime
       consoleLog $ Text.pack $ "renderValue took: " <> show (diffUTCTime t1 t0)
 
-renderValue _ parent type_ value@Value.Tensor{} _ = do
+renderValue _ parent type_ value@Value.Tensor{} cache = do
   span <- createElement "span"
   consoleLog "about to typeToText tensor"
-  setTextContent span (typeToText type_)
+  setTextContent span (valueToText value cache)
   consoleLog "finished typeToText tensor"
   replaceChild parent span
 

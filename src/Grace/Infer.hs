@@ -1596,6 +1596,25 @@ infer e0 = do
                 _ -> do
                     throwError (InvalidOperands (Syntax.location left) _L')
 
+        Syntax.Operator{ operator = Syntax.TensorIndex, .. } -> do
+            return Type.Forall
+              { nameLocation = Syntax.location e0
+              , name = "shape"
+              , domain = Domain.Type
+              , type_ = Type.Forall
+                { nameLocation = Syntax.location e0
+                , name = "a"
+                , domain = Domain.Type
+                , type_ = Type.Tensor
+                  { shape = var "shape"
+                  , type_ = var "a"
+                  , ..
+                  } ~> var "a"
+                , ..                   
+                }
+              ,..
+              }
+
         Syntax.Builtin{ builtin = Syntax.RealEqual, .. }-> do
             return
                 (   Type.Scalar{ scalar = Monotype.Real, .. }

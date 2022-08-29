@@ -81,7 +81,12 @@ resolve manager input = case input of
 
             let handler e = throw (HTTPError e)
 
-            code <- Exception.handle handler (fetch manager (Text.pack name))
+            resp <- Exception.handle handler (fetch manager (Text.pack name))
+#ifdef ghcjs_HOST_OS
+            let code = Text.pack $ JSString.unpack resp
+#else
+            let code = resp
+#endif
 
             result <- case Parser.parse name code of
                 Left e -> Exception.throw e

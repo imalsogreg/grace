@@ -309,6 +309,10 @@ data Operator
     -- ^
     --   >>> pretty Times
     --   *
+    | TensorIndex
+    -- ^
+    --   >>> pretty TensorIndex
+    --   !!
     deriving (Eq, Generic, Lift, Show)
 
 instance NFData Operator
@@ -318,6 +322,7 @@ instance Pretty Operator where
     pretty Or     = Pretty.operator "||"
     pretty Plus   = Pretty.operator "+"
     pretty Times  = Pretty.operator "*"
+    pretty TensorIndex  = Pretty.operator "!!"
 
 -- | A built-in function
 data Builtin
@@ -547,7 +552,14 @@ prettyExpression Annotation{..} =
             <>  " "
             <>  pretty annotation
             )
-prettyExpression Tensor{..} = "Tensor"
+prettyExpression Tensor{..} =
+  let
+    (nElems, shownElems) = case tensorElements of
+        TensorIntElements ints -> (Vector.length ints, show (Vector.toList (Vector.take 10 ints)))
+        TensorFloatElements floats -> (Vector.length floats, show (Vector.toList (Vector.take 10 floats)))
+    suffix = if nElems > 10 then "..." else ""
+  in
+  "Tensor " <> pretty shownElems <> suffix
 prettyExpression TritonCall {..} = pretty modelName
 prettyExpression other =
     prettyTimesExpression other
