@@ -143,7 +143,7 @@
             pathsToLink = ["/bin"];
           };
           config = {
-            Cmd = ["/bin/grace serve --port 8000"];
+            Cmd = ["${withDefaultCompiler.graceMinimal}/bin/grace" "serve" "--port" "8000"];
           };
         };
 
